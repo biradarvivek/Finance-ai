@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -7,7 +7,11 @@ function App() {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [insights, setInsights] = useState(null);
-
+  const [deepAnalysis, setDeepAnalysis] = useState(null);
+  const [availableMonths, setAvailableMonths] = useState([]);
+  const [selectedCurrent, setSelectedCurrent] = useState("");
+  const [selectedPrevious, setSelectedPrevious] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState([
     {
@@ -38,7 +42,7 @@ function App() {
       console.log("Upload response:", res);
 
       setInsights({
-        totalTransactions: res.data.transactions?.length || 0,
+        totalTransactions: res.data.count || 0,
         message: "PDF processed and saved to AI Database successfully!",
       });
     } catch (error) {
@@ -46,6 +50,38 @@ function App() {
       alert("Failed to process the PDF. Is your Python server running?");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const fetchAvailableMonths = async () => {
+    try {
+      const res = await axios.get("http://localhost:5000/api/analysis/months");
+      setAvailableMonths(res.data);
+    } catch (err) {
+      console.error("Failed to fetch available months:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchAvailableMonths();
+  }, [insights]);
+
+  // 📊 Handle Fetching the Comparison Data
+  const fetchAnalysis = async () => {
+    if (!selectedCurrent || !selectedPrevious) return;
+
+    setIsAnalyzing(true);
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/analysis/compare?current=${selectedCurrent}&previous=${selectedPrevious}`,
+      );
+      setDeepAnalysis(res.data);
+    } catch (error) {
+      console.error("Analysis fetch failed:", error);
+      alert("No data found for these months, or the server failed.");
+      setDeepAnalysis(null);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -59,8 +95,10 @@ function App() {
     setChatInput("");
     setIsTyping(true);
 
+    // 💬 Handle AI Chat
     try {
-      const res = await axios.get(`http://localhost:8000/chat`, {
+      // 🛑 CHANGED: Pointing to Node.js (5000) instead of Python directly!
+      const res = await axios.get(`http://localhost:5000/api/chat`, {
         params: { query: userMsg },
       });
       console.log("Chat response:", res);
@@ -108,6 +146,123 @@ function App() {
             </form>
           </div>
 
+          {insights && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-4 animate-fade-in">
+              <h2 className="text-lg font-semibold text-gray-600 border-b pb-3">
+                3. Monthly Breakdown
+              </h2>
+
+              {/* --- NEW: Dropdown Controls --- */}
+              <div className="flex gap-4 items-end">
+                <div className="flex flex-col flex-1 gap-2">
+                  <label className="text-sm text-gray-500 font-semibold">
+                    Current Month
+                  </label>
+                  <select
+                    value={selectedCurrent}
+                    onChange={(e) => setSelectedCurrent(e.target.value)}
+                    className="border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 bg-white"
+                  >
+                    <option value="">Select Month...</option>
+                    {/* 🚀 NOW DYNAMIC! */}
+                    {availableMonths.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col flex-1 gap-2">
+                  <label className="text-sm text-gray-500 font-semibold">
+                    Previous Month
+                  </label>
+                  <select
+                    value={selectedPrevious}
+                    onChange={(e) => setSelectedPrevious(e.target.value)}
+                    className="border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 bg-white"
+                  >
+                    <option value="">Select Month...</option>
+                    {/* 🚀 NOW DYNAMIC! */}
+                    {availableMonths.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={fetchAnalysis}
+                  disabled={
+                    !selectedCurrent || !selectedPrevious || isAnalyzing
+                  }
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold px-6 py-3 rounded-xl transition-colors h-[50px]"
+                >
+                  {isAnalyzing ? "Loading..." : "Compare"}
+                </button>
+              </div>
+
+              {/* --- The Results Table (Only shows after 'Compare' is clicked) --- */}
+              {deepAnalysis && deepAnalysis.summary && (
+                <div className="mt-4 flex flex-col gap-3">
+                  {Object.keys(deepAnalysis.comparison).map((category, idx) => {
+                    const currSpent =
+                      deepAnalysis.summary[deepAnalysis.months.current]?.[
+                        category
+                      ] || 0;
+                    const prevSpent =
+                      deepAnalysis.summary[deepAnalysis.months.previous]?.[
+                        category
+                      ] || 0;
+                    const diff = deepAnalysis.comparison[category];
+
+                    return (
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-gray-100 transition-colors"
+                      >
+                        <span className="font-bold text-gray-700 w-1/4 truncate">
+                          {category}
+                        </span>
+
+                        <div className="flex gap-4 text-sm w-3/4 justify-end">
+                          <div className="flex flex-col text-right w-1/3">
+                            <span className="text-gray-400 text-xs uppercase tracking-wider">
+                              {deepAnalysis.months.previous}
+                            </span>
+                            <span className="font-semibold text-gray-500">
+                              ₹{prevSpent.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex flex-col text-right border-l pl-4 border-gray-200 w-1/3">
+                            <span className="text-gray-400 text-xs uppercase tracking-wider">
+                              {deepAnalysis.months.current}
+                            </span>
+                            <span className="font-semibold text-gray-800">
+                              ₹{currSpent.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex flex-col text-right border-l pl-4 border-gray-200 w-1/3">
+                            <span className="text-gray-400 text-xs uppercase tracking-wider">
+                              Trend
+                            </span>
+                            <span
+                              className={`font-bold ${diff > 0 ? "text-red-500" : diff < 0 ? "text-green-500" : "text-gray-400"}`}
+                            >
+                              {diff > 0 ? "↑" : diff < 0 ? "↓" : "="} ₹
+                              {Math.abs(diff).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Insights Card */}
           {insights && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -129,6 +284,8 @@ function App() {
             </div>
           )}
         </div>
+
+        {/* Deep Analysis Card - NOW INTERACTIVE */}
 
         {/* RIGHT PANEL: Chatbot */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden h-full">

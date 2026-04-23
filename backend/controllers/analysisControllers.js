@@ -4,36 +4,41 @@ exports.compareMonths = async (req, res) => {
   console.log("\n📊 --- STARTING MONTHLY ANALYSIS ---");
 
   try {
-    // We expect the frontend to tell us which months to compare (e.g., ?current=APR&previous=MAR)
-    const { current, previous } = req.query;
+    // 1. Extract AND trim immediately to prevent key-mismatch crashes later
+    let { current, previous } = req.query;
 
     if (!current || !previous) {
-      return res
-        .status(400)
-        .json({
-          error: "Please provide 'current' and 'previous' months in the query.",
-        });
+      return res.status(400).json({
+        error: "Please provide 'current' and 'previous' months in the query.",
+      });
     }
 
-    console.log(`🔍 Comparing: ${current} vs ${previous}`);
+    current = current.trim();
+    previous = previous.trim();
+
+    console.log(`🔍 Comparing: '${current}' vs '${previous}'`);
 
     // 🔥 HIGH PERFORMANCE: MongoDB Aggregation Pipeline
     const expenses = await Transaction.aggregate([
       {
         $match: {
-          amount: { $lt: 0 }, // Filter 1: Only look at expenses (negative amounts)
-          month: { $in: [current, previous] }, // Filter 2: Only fetch the two requested months
+          month: { $in: [current, previous] },
+          // 🛑 REMOVED the { amount: { $lt: 0 } } filter!
         },
       },
       {
         $group: {
           _id: { month: "$month", category: "$category" },
-          totalSpent: { $sum: "$amount" }, // Sum up the expenses
+          totalSpent: { $sum: "$amount" }, // Sums both positives and negatives
         },
       },
     ]);
 
+    // 🚀 Print exactly what MongoDB found!
+    console.log("Raw Expenses from DB:", expenses);
+
     // 🏗️ Transform the raw MongoDB data into a clean, structured object
+    // Now using the perfectly clean keys!
     const summary = { [current]: {}, [previous]: {} };
 
     expenses.forEach((item) => {
@@ -41,6 +46,7 @@ exports.compareMonths = async (req, res) => {
       const category = item._id.category;
 
       // Convert negative amounts to positive for easier reading in the UI
+      // If the category doesn't exist yet, it safely creates it
       summary[month][category] = Math.abs(item.totalSpent);
     });
 
@@ -72,6 +78,22 @@ exports.compareMonths = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Analysis Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// 🚀 NEW: Fetch all unique months that exist in the database
+exports.getAvailableMonths = async (req, res) => {
+  try {
+    // .distinct() is a super fast MongoDB command that gets unique values
+    const months = await Transaction.distinct("month");
+
+    // Sort them alphabetically (or you can write custom date sorting later)
+    months.sort();
+
+    res.json(months);
+  } catch (err) {
+    console.error("❌ Error fetching months:", err);
     res.status(500).json({ error: err.message });
   }
 };
