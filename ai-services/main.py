@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from vector_store import vector_db
 from fastapi.middleware.cors import CORSMiddleware #
+import re
 
 
 
@@ -180,7 +181,7 @@ def categorize_llm_batch(descriptions: List[str]) -> List[str]:
 # 5. MAIN API ROUTE
 # -----------------------------
 @app.post("/process")
-async def process_pdf(request: Request):
+async def process_pdf(request: Request, user_id: str):
     print("\n=================================================")
     print("🚀 NEW PDF PROCESSING REQUEST INITIATED")
     print("=================================================")
@@ -255,8 +256,8 @@ async def process_pdf(request: Request):
         txn["category"] = final_categories[i]
 
     # SAVE TO CHROMADB FOR THE CHATBOT
-    print("🗄️ [STEP 6] Saving to ChromaDB Vector Database...")
-    vector_db.add_transactions(all_transactions)
+    print(f"🗄️ [STEP 6] Saving to ChromaDB Vector Database for user {user_id}...")
+    vector_db.add_transactions(all_transactions, user_id)
 
     print("🏁 PROCESSING COMPLETE. Returning massive payload to Node.js.")
     print("=================================================\n")
@@ -271,24 +272,30 @@ async def process_pdf(request: Request):
 # 6. CHATBOT API (The True RAG Engine)
 # -----------------------------
 @app.get("/chat")
-async def chat_with_transactions(query: str):
-    print(f"\n💬 [CHATBOT] User asked: '{query}'")
+async def chat_with_transactions(query: str, user_id: str):
+    print(f"\n💬 [CHATBOT] User {user_id} asked: '{query}'")
     
+    # 🕵️‍♂️ THE AGENT INTERCEPTOR
+    # Scans the query for date formats like "18-APR-2023"
+    date_match = re.search(r'\d{2}-[a-zA-Z]{3}-\d{4}', query, re.IGNORECASE)
+    extracted_date = date_match.group(0).upper() if date_match else None
+
     # 1. Retrieve the closest math matches from ChromaDB
-    matches = vector_db.search(query, top_k=5)
+    # 🔥 UPGRADED: Passing extracted_date and bumping top_k to 15!
+    matches = vector_db.search(query, user_id=user_id, exact_date=extracted_date, top_k=15)
     
     if not matches:
-        return {"answer": "You haven't uploaded any bank statements yet!"}
+        return {"answer": "I could not find any transactions matching your request in the current statement."}
         
     # 2. Format the matches so the LLM can read them easily
     context_data = json.dumps(matches, indent=2)
     
-    # 3. Create the strict RAG Prompt
+    # 3. Create the strict RAG Prompt (Updated to say top 15)
     prompt = f"""
     You are an intelligent financial assistant. 
     The user asked: "{query}"
     
-    Here are the top 5 most relevant transactions retrieved from their database:
+    Here are the top 15 most relevant transactions retrieved from their database:
     {context_data}
     
     STRICT RULES:
@@ -301,13 +308,11 @@ async def chat_with_transactions(query: str):
     print("🧠 Thinking... Sending retrieved context to LLM...")
     
     # 4. Ask the LLM to write the final answer
-    # 4. Ask the LLM to write the final answer
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
             json={
-                # You can also try "google/gemini-2.0-flash-lite-preview-02-05:free" if this one is down!
                 "model": "openai/gpt-oss-120b:free", 
                 "messages": [
                     {"role": "system", "content": "You are a financial AI agent."},

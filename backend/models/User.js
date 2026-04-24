@@ -31,12 +31,14 @@ const userSchema = new mongoose.Schema({
 });
 
 // 🔒 Hash password before saving
-userSchema.pre("save", async function (next) {
+userSchema.pre("save", async function () {
+  // If the password hasn't been changed, just exit the function
   if (!this.isModified("password")) {
-    return next();
+    return;
   }
+
+  // Hash the password securely
   this.password = await bcrypt.hash(this.password, 10);
-  next();
 });
 
 // 🔑 Check if password is correct

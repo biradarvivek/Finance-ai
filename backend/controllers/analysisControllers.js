@@ -4,7 +4,6 @@ exports.compareMonths = async (req, res) => {
   console.log("\n📊 --- STARTING MONTHLY ANALYSIS ---");
 
   try {
-    // 1. Extract AND trim immediately to prevent key-mismatch crashes later
     let { current, previous } = req.query;
 
     if (!current || !previous) {
@@ -16,14 +15,16 @@ exports.compareMonths = async (req, res) => {
     current = current.trim();
     previous = previous.trim();
 
-    console.log(`🔍 Comparing: '${current}' vs '${previous}'`);
+    console.log(
+      `🔍 Comparing: '${current}' vs '${previous}' for User: ${req.userId}`,
+    );
 
     // 🔥 HIGH PERFORMANCE: MongoDB Aggregation Pipeline
     const expenses = await Transaction.aggregate([
       {
         $match: {
+          userId: req.userId, // 👈 1. SECURITY LOCK: Only aggregate THIS user's data!
           month: { $in: [current, previous] },
-          // 🛑 REMOVED the { amount: { $lt: 0 } } filter!
         },
       },
       {
@@ -38,22 +39,16 @@ exports.compareMonths = async (req, res) => {
     console.log("Raw Expenses from DB:", expenses);
 
     // 🏗️ Transform the raw MongoDB data into a clean, structured object
-    // Now using the perfectly clean keys!
     const summary = { [current]: {}, [previous]: {} };
 
     expenses.forEach((item) => {
       const month = item._id.month;
       const category = item._id.category;
-
-      // Convert negative amounts to positive for easier reading in the UI
-      // If the category doesn't exist yet, it safely creates it
       summary[month][category] = Math.abs(item.totalSpent);
     });
 
     // ⚖️ Calculate the Differences (Current Month - Previous Month)
     const comparison = {};
-
-    // Get a unique list of all categories that show up in either month
     const allCategories = new Set([
       ...Object.keys(summary[current]),
       ...Object.keys(summary[previous]),
@@ -62,13 +57,10 @@ exports.compareMonths = async (req, res) => {
     allCategories.forEach((category) => {
       const currSpent = summary[current][category] || 0;
       const prevSpent = summary[previous][category] || 0;
-
-      // Positive number = spent MORE this month. Negative number = spent LESS.
       comparison[category] = currSpent - prevSpent;
     });
 
     console.log("✅ Analysis complete!");
-    console.log("Comparison Data:", comparison);
     console.log("-----------------------------------\n");
 
     res.json({
@@ -85,15 +77,25 @@ exports.compareMonths = async (req, res) => {
 // 🚀 NEW: Fetch all unique months that exist in the database
 exports.getAvailableMonths = async (req, res) => {
   try {
-    // .distinct() is a super fast MongoDB command that gets unique values
-    const months = await Transaction.distinct("month");
+    // 👈 2. SECURITY LOCK: Only fetch the distinct months for THIS user!
+    const months = await Transaction.distinct("month", { userId: req.userId });
 
-    // Sort them alphabetically (or you can write custom date sorting later)
+    // Sort them alphabetically
     months.sort();
 
     res.json(months);
   } catch (err) {
     console.error("❌ Error fetching months:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// 🚀 NEW: Check if the user has data on page refresh
+exports.getDashboardStatus = async (req, res) => {
+  try {
+    const count = await Transaction.countDocuments({ userId: req.userId });
+    res.json({ hasData: count > 0, totalTransactions: count });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };

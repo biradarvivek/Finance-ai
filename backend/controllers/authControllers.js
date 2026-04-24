@@ -3,9 +3,13 @@ const User = require("../models/User");
 // Helper function to generate and save both tokens
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
+    console.log("Generating tokens for user ID:", userId);
     const user = await User.findById(userId);
+    console.log("User found for token generation:", user);
     const accessToken = user.generateAccessToken();
+    console.log("Access Token generated:", accessToken);
     const refreshToken = user.generateRefreshToken();
+    console.log("Refresh Token generated:", refreshToken);
 
     // Save refresh token to database
     user.refreshToken = refreshToken;
@@ -13,6 +17,7 @@ const generateAccessAndRefreshTokens = async (userId) => {
 
     return { accessToken, refreshToken };
   } catch (error) {
+    console.error("❌ TOKEN GENERATION ERROR:", error);
     throw new Error("Something went wrong while generating tokens");
   }
 };
@@ -21,8 +26,10 @@ const generateAccessAndRefreshTokens = async (userId) => {
 exports.register = async (req, res) => {
   try {
     const { email, username, fullName, password } = req.body;
+    console.log("Registration Data:", { email, username, fullName, password });
 
     const existingUser = await User.findOne({ email });
+    console.log("Existing User Check:", existingUser);
     if (existingUser)
       return res.status(400).json({ error: "Email already in use." });
 
@@ -34,15 +41,20 @@ exports.register = async (req, res) => {
       password,
     });
 
+    console.log("New User Created:", newUser);
+
     // Generate Tokens
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
       newUser._id,
     );
 
+    console.log("Generated Tokens:", { accessToken, refreshToken });
+
     // Remove password and refresh token from the response object
     const createdUser = await User.findById(newUser._id).select(
       "-password -refreshToken",
     );
+    console.log("User Data Sent to Client:", createdUser);
 
     res.status(201).json({
       user: createdUser,
@@ -50,6 +62,7 @@ exports.register = async (req, res) => {
       refreshToken,
     });
   } catch (error) {
+    console.error("❌ CRITICAL CRASH DURING USER CREATION:", error);
     res
       .status(500)
       .json({ error: "Registration failed.", details: error.message });
@@ -95,6 +108,7 @@ exports.refreshAccessToken = async (req, res) => {
   try {
     // 1. Grab the refresh token from the request body
     const incomingRefreshToken = req.body.refreshToken;
+    console.log("Received Refresh Token:", incomingRefreshToken); // 🚀 Debug: See the incoming refresh token
 
     if (!incomingRefreshToken) {
       return res.status(401).json({ error: "Refresh token is missing." });

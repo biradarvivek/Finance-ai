@@ -16,7 +16,7 @@ class TransactionVectorDB:
         )
         print(f"📂 ChromaDB ready! Currently holding {self.collection.count()} transactions.")
 
-    def add_transactions(self, transactions: list):
+    def add_transactions(self, transactions: list, user_id: str): # 👈 ADDED user_id
         if not transactions:
             return
 
@@ -43,20 +43,49 @@ class TransactionVectorDB:
             text = f"On {date}, {action} {abs(amount)} on {desc}. Category: {cat}."
             
             documents.append(text)
+            
+            # 🔒 SECURITY: Tag the metadata with the specific user_id
             metadatas.append({
-                "date": str(date), "description": str(desc),
-                "amount": float(amount), "category": str(cat)
+                "date": str(date), 
+                "description": str(desc),
+                "amount": float(amount), 
+                "category": str(cat),
+                "user_id": str(user_id) # 👈 ADDED user_id
             })
-            ids.append(f"txn_{start_id + i}")
+            
+            # 🔒 SECURITY: Make the ID completely unique per user
+            ids.append(f"txn_{user_id}_{start_id + i}")
 
-        print(f"🧠 Generating embeddings and saving {len(documents)} items to ChromaDB...")
+        print(f"🧠 Generating embeddings and saving {len(documents)} items to ChromaDB for user {user_id}...")
         self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
         print("💾 Saved successfully to ChromaDB!")
 
-    def search(self, query: str, top_k=5):
+    def search(self, query: str, user_id: str, exact_date: str = None, top_k=15): # 👈 Bumped to 15!
         if self.collection.count() == 0: return []
-        print(f"🔍 Searching ChromaDB for: '{query}'")
-        results = self.collection.query(query_texts=[query], n_results=top_k)
-        return results["metadatas"][0] if results["metadatas"] else []
+        
+        print(f"🔍 Searching ChromaDB for: '{query}' (User: {user_id})")
+        
+        # 🧠 The Agentic Router Logic
+        if exact_date:
+            print(f"🎯 EXACT MATCH MODE: Forcing database to only fetch transactions from {exact_date}")
+            # Use ChromaDB's $and operator to enforce TWO security locks
+            where_clause = {
+                "$and": [
+                    {"user_id": str(user_id)},
+                    {"date": exact_date}
+                ]
+            }
+        else:
+            # Standard semantic search
+            where_clause = {"user_id": str(user_id)}
+
+        results = self.collection.query(
+            query_texts=[query], 
+            n_results=top_k,
+            where=where_clause 
+        )
+        
+        # We must return the raw text "documents" so the LLM can read them
+        return results["documents"][0] if results["documents"] else []
 
 vector_db = TransactionVectorDB()
