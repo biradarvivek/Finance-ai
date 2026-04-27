@@ -11,6 +11,7 @@ exports.uploadFile = async (req, res) => {
       req.file.buffer,
       {
         headers: { "Content-Type": "application/pdf" },
+        Authorization: req.header("Authorization"),
       },
     );
 
@@ -81,11 +82,42 @@ exports.uploadFile = async (req, res) => {
     console.log("Formatted transactions mapped to user:", req.userId);
 
     // Save to MongoDB
-    await Transaction.insertMany(formattedTransactions);
+    console.log("Formatted transactions mapped to user:", req.userId);
+
+    // 🔥 HIGH PERFORMANCE DUPLICATE PREVENTION
+    console.log(
+      "🛡️ Checking for existing transactions to prevent duplicates...",
+    );
+
+    // Convert our formatted array into a series of strictly filtered 'Upsert' operations
+    const bulkOps = formattedTransactions.map((txn) => ({
+      updateOne: {
+        filter: {
+          userId: txn.userId,
+          date: txn.date,
+          amount: txn.amount,
+          description: txn.description,
+          balance: txn.balance, // Checks the balance too, in case of two identical purchases on the same day
+        },
+        update: { $setOnInsert: txn }, // Only sets the data IF it's a brand new document
+        upsert: true, // Creates a new document if no match is found
+      },
+    }));
+
+    // Execute all checks and inserts in one massive, fast database trip
+    const result = await Transaction.bulkWrite(bulkOps);
+
+    console.log(
+      `✅ Upload complete! New inserted: ${result.upsertedCount}, Skipped duplicates: ${result.matchedCount}`,
+    );
 
     res.json({
-      message: "Transactions saved successfully",
-      count: formattedTransactions.length,
+      message:
+        result.upsertedCount > 0
+          ? "Transactions saved securely."
+          : "No new transactions found. Duplicates skipped.",
+      count: result.upsertedCount,
+      skipped: result.matchedCount,
     });
   } catch (err) {
     console.error("Upload Error:", err.message);

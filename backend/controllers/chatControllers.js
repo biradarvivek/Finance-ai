@@ -36,6 +36,11 @@ exports.askQuestion = async (req, res) => {
     // Note: We use dynamic import for fetch in older Node versions, but native fetch works in Node 18+
     const pythonResponse = await fetch(
       `http://localhost:8000/chat?query=${encodeURIComponent(userQuery)}&user_id=${req.userId}&history=${encodeURIComponent(historyString)}&token=${token}`,
+      {
+        headers: {
+          Authorization: req.header("Authorization"), // 👈 Forward the user's exact token!
+        },
+      },
     );
     const data = await pythonResponse.json();
 

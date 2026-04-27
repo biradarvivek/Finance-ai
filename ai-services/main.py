@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Security, Depends
 from typing import List
 import fitz
 import requests
@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware #
 import re
 from datetime import datetime
 import requests
+import jwt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 
 
@@ -25,6 +27,28 @@ if not OPENROUTER_API_KEY:
 else:
     print("✅ SUCCESS: API Key loaded from .env!")
 
+
+# 1. Load the shared JWT Secret
+ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
+security = HTTPBearer()
+
+# 2. The JWT Verification Guard
+async def verify_jwt(credentials: HTTPAuthorizationCredentials = Security(security)):
+    token = credentials.credentials
+    try:
+        # Node.js uses the HS256 algorithm by default
+        decoded_payload = jwt.decode(token, ACCESS_TOKEN_SECRET, algorithms=["HS256"])
+        
+        # You can even extract the user ID right out of the token!
+        # decoded_payload will look like: {'_id': '69eb1...', 'iat': 177..., 'exp': 177...}
+        return decoded_payload 
+        
+    except jwt.ExpiredSignatureError:
+        print("🛑 SECURITY BLOCK: Token has expired.")
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        print("🛑 SECURITY BLOCK: Invalid or tampered token.")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 app = FastAPI()
@@ -44,6 +68,9 @@ app.add_middleware(
 def extract_text_chunks(content, chunk_size=4000):
     print("📄 [STEP 1] Extracting text from PDF...")
     doc = fitz.open(stream=content, filetype="pdf")
+    if doc.is_encrypted:
+        return {"error": "Please decrypt your PDF before uploading."}
+
     full_text = ""
     
     for page in doc:
@@ -182,7 +209,7 @@ def categorize_llm_batch(descriptions: List[str]) -> List[str]:
 # -----------------------------
 # 5. MAIN API ROUTE
 # -----------------------------
-@app.post("/process")
+@app.post("/process", dependencies=[Depends(verify_jwt)])
 async def process_pdf(request: Request, user_id: str):
     print("\n=================================================")
     print("🚀 NEW PDF PROCESSING REQUEST INITIATED")
@@ -273,7 +300,7 @@ async def process_pdf(request: Request, user_id: str):
 # -----------------------------
 # 6. CHATBOT API (The True RAG Engine)
 # -----------------------------
-@app.get("/chat")
+@app.get("/chat", dependencies=[Depends(verify_jwt)])
 async def chat_with_transactions(query: str, user_id: str, history: str = "", token: str = ""):
     print(f"\n💬 [CHATBOT] User {user_id} asked: '{query}'")
     search_context = f"{history} {query}"
