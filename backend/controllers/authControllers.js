@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const jwt = require("jsonwebtoken");
 
 // Helper function to generate and save both tokens
 const generateAccessAndRefreshTokens = async (userId) => {

@@ -5,129 +5,93 @@ import axios from "axios";
 import UploadCard from "./components/UploadCard";
 import ChatBox from "./components/ChatBox";
 import AnalysisDashboard from "./components/AnalysisDashboard";
-import Auth from "./components/Auth"; // 👈 NEW IMPORT
+import Auth from "./components/Auth";
 
 // 🔄 AXIOS INTERCEPTOR: The Silent Refresher
 axios.interceptors.response.use(
-  (response) => response, // If the request succeeds, just return it normally
+  (response) => response,
   async (error) => {
     const originalRequest = error.config;
-
-    // If the error is 401 (Unauthorized) and we haven't already tried to retry this request...
     if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true; // Mark this request so we don't get stuck in an infinite loop
-
+      originalRequest._retry = true;
       try {
         const currentRefreshToken = localStorage.getItem("refreshToken");
-
-        // Ask Node.js for a new pair of tokens
         const res = await axios.post(
           "http://localhost:5000/api/auth/refresh-token",
           {
             refreshToken: currentRefreshToken,
           },
         );
-
         const newAccessToken = res.data.accessToken;
         const newRefreshToken = res.data.refreshToken;
-
-        // Save the fresh tokens to the browser
         localStorage.setItem("accessToken", newAccessToken);
         localStorage.setItem("refreshToken", newRefreshToken);
-
-        // Update the failed request with the NEW access token
         originalRequest.headers["Authorization"] = `Bearer ${newAccessToken}`;
-
-        // 🚀 Retry the exact same request that failed, silently!
         return axios(originalRequest);
       } catch (refreshError) {
-        // If the Refresh Token itself is expired, it's game over. Force logout.
         console.error("Session completely expired. Please log in again.");
         localStorage.clear();
-        window.location.reload(); // Refresh the page to show the Auth screen
+        window.location.reload();
       }
     }
-
     return Promise.reject(error);
   },
 );
 
 export default function App() {
-  // 🔒 AUTHENTICATION STATE
   const [token, setToken] = useState(
     localStorage.getItem("accessToken") || null,
   );
   const [user, setUser] = useState(
     JSON.parse(localStorage.getItem("user")) || null,
   );
-
-  // 1. App State
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [insights, setInsights] = useState(null);
-
-  // 2. Chat State
   const [chatInput, setChatInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: "ai",
-      text: "Hello! Upload your bank statement, and ask me anything about your spending.",
+      text: "Welcome to the Vault. Upload your encrypted statement or ask me anything about your spending architecture.",
     },
   ]);
-
-  // 3. Analysis State
   const [deepAnalysis, setDeepAnalysis] = useState(null);
   const [availableMonths, setAvailableMonths] = useState([]);
   const [selectedCurrent, setSelectedCurrent] = useState("");
   const [selectedPrevious, setSelectedPrevious] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // 🔄 RECOVERY SYSTEM: Restore Dashboard & Chat on Page Load
   useEffect(() => {
     const restoreDashboard = async () => {
-      if (!token) return; // Only run if the user is logged in
-
+      if (!token) return;
       try {
-        // 1. Check if the user already has transactions in MongoDB
         const statusRes = await axios.get(
           "http://localhost:5000/api/analysis/status",
           {
             headers: { Authorization: `Bearer ${token}` },
           },
         );
-
-        // If they have data, unlock the dashboard!
         if (statusRes.data.hasData) {
           setInsights({
             totalTransactions: statusRes.data.totalTransactions,
-            message: "Data securely loaded from your vault.",
+            message: "Vault data decrypted & loaded.",
           });
-
-          // Fetch the months so the "Monthly Breakdown" dropdowns work immediately
           fetchAvailableMonths();
         }
-
-        // 2. Fetch the Chat History
         const chatRes = await axios.get(
           "http://localhost:5000/api/chat/history",
           {
             headers: { Authorization: `Bearer ${token}` },
           },
         );
-
         if (chatRes.data.length > 0) {
-          // Format the database messages to match our UI state
           const formattedHistory = chatRes.data.map((msg) => ({
             role: msg.role,
             text: msg.text,
           }));
-
           setMessages([
-            {
-              role: "ai",
-              text: "Welcome back! Your chat history is restored.",
-            },
+            { role: "ai", text: "Welcome back. Neural link restored." },
             ...formattedHistory,
           ]);
         }
@@ -135,41 +99,29 @@ export default function App() {
         console.error("Failed to restore dashboard:", error);
       }
     };
-
     restoreDashboard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]); // This triggers every time the 'token' loads
+  }, [token]);
 
-  // 🔒 HANDLE SUCCESSFUL LOGIN/SIGNUP
   const handleAuthSuccess = (authData) => {
     setToken(authData.accessToken);
     setUser(authData.user);
-    // Save to browser storage so they stay logged in after refresh
     localStorage.setItem("accessToken", authData.accessToken);
     localStorage.setItem("refreshToken", authData.refreshToken);
     localStorage.setItem("user", JSON.stringify(authData.user));
   };
 
-  // 🔒 HANDLE LOGOUT
   const handleLogout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
-    // Clear dashboard data
+    localStorage.clear();
     setInsights(null);
     setDeepAnalysis(null);
-    setMessages([{ role: "ai", text: "Please log in to continue." }]);
+    setMessages([{ role: "ai", text: "Session terminated. Please log in." }]);
   };
-
-  // --- FUNCTIONS (Upload, Chat, Analysis) ---
-  // (Keep all your existing uploadFile, fetchAvailableMonths, fetchAnalysis, and handleSendMessage functions exactly the same for now)
-  // ... [YOUR EXISTING FUNCTIONS HERE] ...
 
   const uploadFile = async (e) => {
     e.preventDefault();
-    if (!file) return alert("Please select a PDF first!");
+    if (!file) return alert("Select a secure PDF matrix first.");
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
@@ -180,17 +132,17 @@ export default function App() {
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${token}`, // 👈 NEW: Send the VIP pass!
+            Authorization: `Bearer ${token}`,
           },
         },
       );
       setInsights({
         totalTransactions: res.data.count || 0,
-        message: "PDF processed securely!",
+        message: "Matrix parsed securely!",
       });
       fetchAvailableMonths();
     } catch (error) {
-      alert("Upload failed.");
+      alert("Upload failed. Core breach.");
     } finally {
       setIsUploading(false);
     }
@@ -213,12 +165,8 @@ export default function App() {
     try {
       const res = await axios.get(
         `http://localhost:5000/api/analysis/compare?current=${selectedCurrent}&previous=${selectedPrevious}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-
-      console.log("Received Analysis Data:", res.data); // 🚀 Debug: See the raw data from the backend
       setDeepAnalysis(res.data);
     } catch (error) {
       setDeepAnalysis(null);
@@ -243,43 +191,46 @@ export default function App() {
     } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: "ai", text: "Error connecting to AI." },
+        { role: "ai", text: "Neural link severed. Retrying connection." },
       ]);
     } finally {
       setIsTyping(false);
     }
   };
 
-  // 🛑 IF NOT LOGGED IN, SHOW AUTH SCREEN
-  if (!token) {
-    return <Auth onLoginSuccess={handleAuthSuccess} />;
-  }
+  if (!token) return <Auth onLoginSuccess={handleAuthSuccess} />;
 
-  // ✅ IF LOGGED IN, SHOW MAIN DASHBOARD
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-gray-800 p-4 md:p-8 font-sans">
-      <div className="max-w-[1400px] mx-auto flex flex-col">
-        {/* Header with Logout Button */}
-        <header className="mb-8 flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <div>
-            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">
-              AI Financial Agent
-            </h1>
-            <p className="text-gray-500 mt-1 text-sm">
-              Welcome back, {user?.fullName || user?.email}!
-            </p>
+    <div className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-8 font-sans selection:bg-cyan-500/30">
+      <div className="max-w-[1400px] mx-auto flex flex-col gap-6">
+        {/* Glass Header */}
+        <header className="flex justify-between items-center bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl border border-white/10 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+              <span className="font-bold text-white text-xl tracking-tighter">
+                AI
+              </span>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight">
+                FinVault Core
+              </h1>
+              <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest">
+                User: {user?.username || user?.email} // Status: Active
+              </p>
+            </div>
           </div>
           <button
             onClick={handleLogout}
-            className="bg-red-50 text-red-600 hover:bg-red-100 font-semibold px-4 py-2 rounded-lg transition-colors text-sm"
+            className="bg-slate-900 hover:bg-slate-950 text-slate-300 border border-slate-700 hover:border-rose-500/50 font-semibold px-5 py-2 rounded-xl transition-all duration-300 text-sm"
           >
-            Logout
+            Disconnect
           </button>
         </header>
 
-        {/* Top Row: Split 1/3 Upload, 2/3 Chat */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1">
+        {/* Bento Grid Top Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 flex flex-col gap-6">
             <UploadCard
               file={file}
               setFile={setFile}
@@ -300,7 +251,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Bottom Row: Full Width Analysis Dashboard */}
+        {/* Bottom Row Analysis */}
         {insights && (
           <AnalysisDashboard
             availableMonths={availableMonths}

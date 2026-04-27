@@ -17,13 +17,25 @@ exports.askQuestion = async (req, res) => {
   try {
     const userQuery = req.query.query;
 
+    const authHeader = req.header("Authorization");
+    const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+
+    const pastMessages = await Chat.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .limit(4);
+
+    const historyString = pastMessages
+      .reverse()
+      .map((m) => `${m.role === "ai" ? "AI" : "User"}: ${m.text}`)
+      .join("\n");
+
     // A. Save the USER'S question to MongoDB
     await Chat.create({ userId: req.userId, role: "user", text: userQuery });
 
     // B. Forward to Python FastAPI
     // Note: We use dynamic import for fetch in older Node versions, but native fetch works in Node 18+
     const pythonResponse = await fetch(
-      `http://localhost:8000/chat?query=${encodeURIComponent(userQuery)}&user_id=${req.userId}`,
+      `http://localhost:8000/chat?query=${encodeURIComponent(userQuery)}&user_id=${req.userId}&history=${encodeURIComponent(historyString)}&token=${token}`,
     );
     const data = await pythonResponse.json();
 

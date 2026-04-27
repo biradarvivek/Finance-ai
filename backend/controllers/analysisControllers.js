@@ -99,3 +99,62 @@ exports.getDashboardStatus = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// 🚀 NEW: Dynamic Agentic Querying (Text-to-Mongo)
+exports.calculateDynamicTotal = async (req, res) => {
+  try {
+    const { category, year, keyword } = req.query;
+    console.log(
+      `Received Agentic Query with filters - Category: ${category}, Year: ${year}, Keyword: ${keyword} for User: ${req.userId}`,
+    );
+
+    // 1. Base Security Match (Crucial for Multi-tenant)
+    const matchStage = { userId: req.userId };
+
+    // 2. Dynamically build the query based on Python's extracted parameters
+    if (category) {
+      // Case-insensitive regex search for category
+      matchStage.category = { $regex: new RegExp(category, "i") };
+    }
+    if (year) {
+      // Searches the 'month' string for the year (e.g., "2023")
+      matchStage.month = { $regex: new RegExp(year, "i") };
+    }
+    if (keyword) {
+      // Search the description for specific brands/keywords (e.g., "Swiggy", "Amazon")
+      matchStage.description = { $regex: new RegExp(keyword, "i") };
+    }
+
+    console.log(`🤖 AI Agent calculating total with filters:`, {
+      category,
+      year,
+      keyword,
+    });
+
+    // 3. High-Performance Aggregation
+    const result = await Transaction.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: "$amount" }, // Adds up all the matching transactions
+          transactionCount: { $sum: 1 }, // Counts how many transactions matched
+        },
+      },
+    ]);
+
+    // 4. Format and return safely
+    const total = result.length > 0 ? result[0].totalAmount : 0;
+    const count = result.length > 0 ? result[0].transactionCount : 0;
+
+    res.json({
+      success: true,
+      totalAmount: Math.abs(total), // Return absolute value for easier LLM reading
+      type: total < 0 ? "Expense" : total > 0 ? "Income" : "None",
+      transactionCount: count,
+    });
+  } catch (err) {
+    console.error("❌ Agentic Query Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};

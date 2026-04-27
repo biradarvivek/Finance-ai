@@ -14,13 +14,13 @@ import {
 } from "recharts";
 
 const COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
+  "#22d3ee",
+  "#fb7185",
+  "#a78bfa",
+  "#34d399",
+  "#fcd34d",
+  "#60a5fa",
+  "#f472b6",
 ];
 
 export default function AnalysisDashboard({
@@ -34,29 +34,29 @@ export default function AnalysisDashboard({
   deepAnalysis,
 }) {
   return (
-    <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-8 animate-fade-in mt-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-6">
+    <div className="bg-slate-800/50 backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/10 shadow-xl flex flex-col gap-8 animate-fade-in">
+      {/* Controls Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50 p-6 rounded-2xl border border-slate-700/50">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">
-            3. Visual Analytics
+          <h2 className="text-xl font-bold text-white tracking-tight">
+            Temporal Analysis
           </h2>
-          <p className="text-sm text-gray-500">
-            Compare your month-over-month spending trends.
+          <p className="text-sm text-slate-400 mt-1">
+            Cross-reference sector spending.
           </p>
         </div>
 
-        {/* Controls */}
         <div className="flex flex-wrap gap-4 items-end w-full md:w-auto">
-          <div className="flex flex-col gap-1 flex-1 md:w-40">
-            <label className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
-              Current
+          <div className="flex flex-col gap-2 flex-1 md:w-40">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              Primary Point
             </label>
             <select
               value={selectedCurrent}
               onChange={(e) => setSelectedCurrent(e.target.value)}
-              className="border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500/50 bg-white text-sm"
+              className="bg-slate-800 border border-slate-600 rounded-xl p-3 outline-none focus:border-cyan-500 text-white text-sm"
             >
-              <option value="">Select...</option>
+              <option value="">Select Target...</option>
               {availableMonths.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -64,16 +64,16 @@ export default function AnalysisDashboard({
               ))}
             </select>
           </div>
-          <div className="flex flex-col gap-1 flex-1 md:w-40">
-            <label className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
-              Previous
+          <div className="flex flex-col gap-2 flex-1 md:w-40">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              Reference Point
             </label>
             <select
               value={selectedPrevious}
               onChange={(e) => setSelectedPrevious(e.target.value)}
-              className="border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500/50 bg-white text-sm"
+              className="bg-slate-800 border border-slate-600 rounded-xl p-3 outline-none focus:border-cyan-500 text-white text-sm"
             >
-              <option value="">Select...</option>
+              <option value="">Select Anchor...</option>
               {availableMonths.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -84,22 +84,25 @@ export default function AnalysisDashboard({
           <button
             onClick={fetchAnalysis}
             disabled={!selectedCurrent || !selectedPrevious || isAnalyzing}
-            className="bg-gray-900 hover:bg-gray-800 disabled:bg-gray-300 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors h-[42px] text-sm"
+            className="bg-white hover:bg-slate-200 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-bold px-8 py-3 rounded-xl transition-all h-[46px] text-sm"
           >
-            {isAnalyzing ? "..." : "Compare"}
+            {isAnalyzing ? "Scanning..." : "Compute"}
           </button>
         </div>
       </div>
 
-      {/* The Charts */}
+      {/* The Charts Grid */}
       {deepAnalysis && deepAnalysis.summary && (
-        <div className="flex flex-col gap-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[400px]">
-            {/* Pie Chart */}
-            <div className="bg-gray-50 rounded-xl border border-gray-100 p-6 flex flex-col">
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-4 text-center">
-                {deepAnalysis.months.current} Breakdown
-              </h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pie Chart Card */}
+          <div className="bg-slate-900/50 rounded-2xl border border-slate-700/50 p-6 flex flex-col relative overflow-hidden h-[420px]">
+            <div className="absolute -top-10 -right-10 w-40 h-40 bg-purple-500/10 blur-3xl rounded-full pointer-events-none"></div>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 z-10">
+              {deepAnalysis.months.current} Allocation
+            </h3>
+
+            {/* 🔥 FIX: Hardcoded height wrapper to prevent SVG collapse */}
+            <div className="h-[320px] w-full z-10 mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -117,9 +120,10 @@ export default function AnalysisDashboard({
                     cx="50%"
                     cy="50%"
                     innerRadius={70}
-                    outerRadius={110}
+                    outerRadius={100}
                     paddingAngle={5}
                     dataKey="value"
+                    stroke="none"
                   >
                     {Object.keys(
                       deepAnalysis.summary[deepAnalysis.months.current] || {},
@@ -131,18 +135,31 @@ export default function AnalysisDashboard({
                     ))}
                   </Pie>
                   <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#1e293b",
+                      border: "1px solid #334155",
+                      borderRadius: "12px",
+                      color: "#f8fafc",
+                    }}
                     formatter={(value) => `₹${value.toLocaleString()}`}
                   />
-                  <Legend />
+                  <Legend
+                    wrapperStyle={{ fontSize: "12px", color: "#94a3b8" }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
+          </div>
 
-            {/* Bar Chart */}
-            <div className="bg-gray-50 rounded-xl border border-gray-100 p-6 flex flex-col">
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-4 text-center">
-                Trend Comparison
-              </h3>
+          {/* Bar Chart Card */}
+          <div className="bg-slate-900/50 rounded-2xl border border-slate-700/50 p-6 flex flex-col relative overflow-hidden h-[420px]">
+            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-cyan-500/10 blur-3xl rounded-full pointer-events-none"></div>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 z-10">
+              Delta Comparison
+            </h3>
+
+            {/* 🔥 FIX: Hardcoded height wrapper to prevent SVG collapse */}
+            <div className="h-[320px] w-full z-10 mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={Object.keys(deepAnalysis.comparison).map(
@@ -158,35 +175,50 @@ export default function AnalysisDashboard({
                         ] || 0,
                     }),
                   )}
-                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
                     vertical={false}
-                    stroke="#e5e7eb"
+                    stroke="#334155"
                   />
                   <XAxis
                     dataKey="name"
-                    tick={{ fill: "#6b7280", fontSize: 12 }}
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: "#6b7280", fontSize: 12 }}
-                    width={80}
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
                     tickFormatter={(val) => `₹${val}`}
                   />
                   <Tooltip
+                    cursor={{ fill: "rgba(30, 41, 59, 0.5)" }}
+                    contentStyle={{
+                      backgroundColor: "#1e293b",
+                      border: "1px solid #334155",
+                      borderRadius: "12px",
+                      color: "#f8fafc",
+                    }}
                     formatter={(value) => `₹${value.toLocaleString()}`}
-                    cursor={{ fill: "rgba(243, 244, 246, 0.5)" }}
                   />
-                  <Legend />
+                  <Legend
+                    wrapperStyle={{
+                      fontSize: "12px",
+                      color: "#94a3b8",
+                      paddingTop: "20px",
+                    }}
+                  />
                   <Bar
                     dataKey={deepAnalysis.months.current}
-                    fill="#3b82f6"
+                    fill="#22d3ee"
                     radius={[4, 4, 0, 0]}
                   />
                   <Bar
                     dataKey={deepAnalysis.months.previous}
-                    fill="#9ca3af"
+                    fill="#475569"
                     radius={[4, 4, 0, 0]}
                   />
                 </BarChart>
@@ -194,23 +226,23 @@ export default function AnalysisDashboard({
             </div>
           </div>
 
-          {/* Ledger Table */}
-          <div className="mt-4">
-            <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-4">
-              Detailed Ledger
+          {/* Ledger Table spans both columns below charts */}
+          <div className="lg:col-span-2 bg-slate-900/50 rounded-2xl border border-slate-700/50 p-6 mt-2">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">
+              Database Ledger
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-gray-200 text-sm text-gray-500">
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold text-right">
-                      {deepAnalysis.months.previous}
+                  <tr className="border-b border-slate-700/50 text-xs text-slate-400 uppercase tracking-wider">
+                    <th className="p-4 font-bold">Category Sector</th>
+                    <th className="p-4 font-bold text-right">
+                      {deepAnalysis.months.previous} Anchor
                     </th>
-                    <th className="p-3 font-semibold text-right">
-                      {deepAnalysis.months.current}
+                    <th className="p-4 font-bold text-right">
+                      {deepAnalysis.months.current} Target
                     </th>
-                    <th className="p-3 font-semibold text-right">Trend</th>
+                    <th className="p-4 font-bold text-right">Delta Matrix</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,21 +259,19 @@ export default function AnalysisDashboard({
                     return (
                       <tr
                         key={idx}
-                        className="border-b border-gray-100 hover:bg-gray-50 transition-colors text-sm"
+                        className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors text-sm"
                       >
-                        <td className="p-3 font-medium text-gray-700">
-                          {category}
-                        </td>
-                        <td className="p-3 text-right text-gray-500">
+                        <td className="p-4 font-bold text-white">{category}</td>
+                        <td className="p-4 text-right text-slate-400 font-mono">
                           ₹{prev.toLocaleString()}
                         </td>
-                        <td className="p-3 text-right font-semibold text-gray-800">
+                        <td className="p-4 text-right font-bold text-slate-200 font-mono">
                           ₹{curr.toLocaleString()}
                         </td>
                         <td
-                          className={`p-3 text-right font-bold ${diff > 0 ? "text-red-500" : diff < 0 ? "text-green-500" : "text-gray-400"}`}
+                          className={`p-4 text-right font-bold font-mono ${diff > 0 ? "text-rose-400" : diff < 0 ? "text-emerald-400" : "text-slate-500"}`}
                         >
-                          {diff > 0 ? "↑" : diff < 0 ? "↓" : "="} ₹
+                          {diff > 0 ? "▲" : diff < 0 ? "▼" : "■"} ₹
                           {Math.abs(diff).toLocaleString()}
                         </td>
                       </tr>

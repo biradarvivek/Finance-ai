@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from vector_store import vector_db
 from fastapi.middleware.cors import CORSMiddleware #
 import re
+from datetime import datetime
+import requests
 
 
 
@@ -272,42 +274,111 @@ async def process_pdf(request: Request, user_id: str):
 # 6. CHATBOT API (The True RAG Engine)
 # -----------------------------
 @app.get("/chat")
-async def chat_with_transactions(query: str, user_id: str):
+async def chat_with_transactions(query: str, user_id: str, history: str = "", token: str = ""):
     print(f"\n💬 [CHATBOT] User {user_id} asked: '{query}'")
+    search_context = f"{history} {query}"
     
-    # 🕵️‍♂️ THE AGENT INTERCEPTOR
-    # Scans the query for date formats like "18-APR-2023"
-    date_match = re.search(r'\d{2}-[a-zA-Z]{3}-\d{4}', query, re.IGNORECASE)
-    extracted_date = date_match.group(0).upper() if date_match else None
-
-    # 1. Retrieve the closest math matches from ChromaDB
-    # 🔥 UPGRADED: Passing extracted_date and bumping top_k to 15!
-    matches = vector_db.search(query, user_id=user_id, exact_date=extracted_date, top_k=15)
+    # =========================================================
+    # 🕵️‍♂️ AGENT ROUTER 1: THE MATH & TOTALS INTERCEPTOR
+    # =========================================================
+    is_math_query = re.search(r'(total|sum|how much|spend on|spent on|all of)', query, re.IGNORECASE)
     
-    if not matches:
-        return {"answer": "I could not find any transactions matching your request in the current statement."}
+    if is_math_query:
+        print("🧮 MATH AGENT TRIGGERED: Offloading to MongoDB Aggregation Pipeline...")
         
-    # 2. Format the matches so the LLM can read them easily
-    context_data = json.dumps(matches, indent=2)
-    
-    # 3. Create the strict RAG Prompt (Updated to say top 15)
+        # 1. Extract Year (Prioritize current query, then fallback to history)
+        year_match = re.search(r'\b(20\d{2})\b', query)
+        if year_match:
+            year = year_match.group(1)
+        else:
+            # If no year in query, find all years in history and grab the most recently mentioned one
+            history_years = re.findall(r'\b(20\d{2})\b', history)
+            year = history_years[-1] if history_years else ""
+        
+        # 2. Extract Category (Prioritize current query, then fallback to history)
+        categories = ["Food", "Travel", "EMI", "Shopping", "Clothing", "Income", "Others"]
+        extracted_cat = ""
+        
+        # Search the query first!
+        for cat in categories:
+            if cat.lower() in query.lower():
+                extracted_cat = cat
+                break
+                
+        # If no category in the query, check the history for context
+        if not extracted_cat:
+            for cat in categories:
+                if cat.lower() in history.lower():
+                    extracted_cat = cat
+                    break
+                
+        # 3. Ping the Node.js Database Engine!
+        try:
+            db_response = requests.get(
+                f"http://localhost:5000/api/analysis/agent/query?category={extracted_cat}&year={year}",
+                headers={"Authorization": f"Bearer {token}"} 
+            )
+            db_data = db_response.json()
+            
+            amount = db_data.get('totalAmount', 0)
+            txn_count = db_data.get('transactionCount', 0)
+            
+            context_data = f"DATABASE AGENT RESULT: The user spent a total of ₹{amount:,.2f} on '{extracted_cat or 'all categories'}' in {year or 'all time'} across {txn_count} transactions."
+            print(f"📊 Node.js replied: {context_data}")
+            
+        except Exception as e:
+            context_data = "Database Agent failed to retrieve the total."
+            print(f"❌ DB Agent Error: {e}")
+
+    # =========================================================
+    # 🕵️‍♂️ AGENT ROUTER 2: THE EXACT DATE / SEMANTIC SEARCH
+    # =========================================================
+    else:
+        date_match = re.search(r'\d{1,2}-[a-zA-Z]{3}-\d{4}', search_context, re.IGNORECASE)
+        extracted_date = None
+        
+        if date_match:
+            raw_date = date_match.group(0)
+            try:
+                parsed_date = datetime.strptime(raw_date, "%d-%b-%Y")
+                extracted_date = parsed_date.strftime("%d-%b-%Y").upper()
+                print(f"🎯 EXACT MATCH MODE: Standardized date to {extracted_date}")
+            except ValueError:
+                extracted_date = raw_date.upper()
+
+        # Retrieve from ChromaDB
+        matches = vector_db.search(query, user_id=user_id, exact_date=extracted_date, top_k=15)
+        
+        if not matches:
+            return {"answer": "I could not find any transactions matching your request in the current statement."}
+            
+        context_data = json.dumps(matches, indent=2)
+        
+    # =========================================================
+    # 🧠 THE LLM PROMPT (Handles both Math and Semantic Data)
+    # =========================================================
     prompt = f"""
     You are an intelligent financial assistant. 
-    The user asked: "{query}"
     
-    Here are the top 15 most relevant transactions retrieved from their database:
+    RECENT CONVERSATION HISTORY:
+    {history}
+    
+    CURRENT USER QUESTION: 
+    "{query}"
+    
+    SYSTEM CONTEXT / DATABASE RESULTS:
     {context_data}
     
     STRICT RULES:
-    1. Answer the user's question using ONLY the provided transactions.
-    2. Do the math if you need to calculate a total.
-    3. IF the transactions provided do NOT contain the specific brands, names, or categories the user asked about, explicitly tell them: "I could not find any transactions matching your request in the current statement."
-    4. Do not hallucinate or guess. Keep the answer conversational and short.
+    1. Answer the user's question using ONLY the provided SYSTEM CONTEXT.
+    2. If the SYSTEM CONTEXT gives you a "DATABASE AGENT RESULT" with a total sum, use those exact numbers. Do not try to recalculate them.
+    3. Understand the context. If the user asks about "this" or "it", refer to the RECENT CONVERSATION HISTORY.
+    4. IF the context does not contain the answer, explicitly tell them: "I could not find any transactions matching your request."
+    5. Do not hallucinate or guess. Keep the answer conversational and short.
     """
 
     print("🧠 Thinking... Sending retrieved context to LLM...")
     
-    # 4. Ask the LLM to write the final answer
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -322,22 +393,13 @@ async def chat_with_transactions(query: str, user_id: str):
             },
         )
         
-        # 🔥 SAFETY CHECK 1: Did the server crash?
         if response.status_code != 200:
-            print(f"❌ [API ERROR] Status: {response.status_code} - {response.text}")
             return {"answer": "The AI server is temporarily overloaded. Please try again."}
 
         result = response.json()
-        
-        # 🔥 SAFETY CHECK 2: Did it actually send us an answer?
-        if "choices" not in result:
-            print(f"❌ [OPENROUTER ERROR] The API sent back: {result}")
-            return {"answer": "The AI returned an unexpected response. Check your Python terminal for details!"}
-            
         final_answer = result["choices"][0]["message"]["content"]
         
         print("✅ LLM successfully generated a response!")
-        print(f"   ↳ Final Answer: {final_answer}")
         return {"answer": final_answer}
         
     except Exception as e:
