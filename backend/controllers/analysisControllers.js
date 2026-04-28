@@ -79,6 +79,7 @@ exports.getAvailableMonths = async (req, res) => {
   try {
     // 👈 2. SECURITY LOCK: Only fetch the distinct months for THIS user!
     const months = await Transaction.distinct("month", { userId: req.userId });
+    console.log(`📅 Available months for User ${req.userId}:`, months);
 
     // Sort them alphabetically
     months.sort();

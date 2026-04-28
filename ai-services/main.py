@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException, Security, Depends
 from typing import List
-import fitz
+import pdfplumber
+import io
 import requests
 import json
 import re
@@ -13,6 +14,7 @@ from datetime import datetime
 import requests
 import jwt
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from rapidfuzz import process, fuzz
 
 
 
@@ -35,6 +37,7 @@ security = HTTPBearer()
 # 2. The JWT Verification Guard
 async def verify_jwt(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
+    print("🔐 Verifying JWT token from request header..." , token)
     try:
         # Node.js uses the HS256 algorithm by default
         decoded_payload = jwt.decode(token, ACCESS_TOKEN_SECRET, algorithms=["HS256"])
@@ -65,46 +68,109 @@ app.add_middleware(
 # -----------------------------
 # 1. PDF TEXT EXTRACTION & CHUNKING
 # -----------------------------
-def extract_text_chunks(content, chunk_size=4000):
-    print("📄 [STEP 1] Extracting text from PDF...")
-    doc = fitz.open(stream=content, filetype="pdf")
-    if doc.is_encrypted:
-        return {"error": "Please decrypt your PDF before uploading."}
+# def extract_text_chunks(content, chunk_size=4000):
+#     print("📄 [STEP 1] Extracting text from PDF...")
+#     doc = fitz.open(stream=content, filetype="pdf")
+#     if doc.is_encrypted:
+#         return {"error": "Please decrypt your PDF before uploading."}
 
-    full_text = ""
+#     full_text = ""
     
-    for page in doc:
-        # Keep original formatting so we don't accidentally merge words!
-        full_text += page.get_text("text") + "\n"
+#     for page in doc:
+#         # Keep original formatting so we don't accidentally merge words!
+#         full_text += page.get_text("text") + "\n"
         
-    print(f"✅ [STEP 1] Extracted {len(full_text)} characters total.")
+#     print(f"✅ [STEP 1] Extracted {len(full_text)} characters total.")
     
-    # Strictly slice the text into chunks of 4000 characters
-    chunks = [full_text[i:i + chunk_size] for i in range(0, len(full_text), chunk_size)]
-    return chunks
+#     # Strictly slice the text into chunks of 4000 characters
+#     chunks = [full_text[i:i + chunk_size] for i in range(0, len(full_text), chunk_size)]
+#     print("chunks", chunks)
+#     return chunks
 
 # -----------------------------
 # 2. LLM PARSER (Text to JSON)
 # -----------------------------
-def parse_with_llm(text):
-    prompt = f"""
-    Extract bank transactions from the text. Return ONLY a valid JSON array of objects.
+# def parse_with_llm(text):
+#     prompt = f"""
+#     Extract bank transactions from the text. Return ONLY a valid JSON array of objects.
     
-    You MUST format every single transaction exactly like this blueprint:
-    {{
-        "date": "DD-MMM-YYYY",
-        "description": "transaction details",
-        "debit": 100.50,   // use null if it is a credit
-        "credit": null,    // use null if it is a debit
-        "balance": 5000.00
-    }}
+#     You MUST format every single transaction exactly like this blueprint:
+#     {{
+#         "date": "DD-MMM-YYYY",
+#         "description": "transaction details",
+#         "debit": 100.50,   // use null if it is a credit
+#         "credit": null,    // use null if it is a debit
+#         "balance": 5000.00
+#     }}
 
-    STRICT RULES: 
-    - No explanation. 
-    - Only output the JSON array.
-    - Start with [ and end with ].
+#     STRICT RULES: 
+#     - No explanation. 
+#     - Only output the JSON array.
+#     - Start with [ and end with ].
     
-    Text: {text}
+#     Text: {text}
+#     """
+    
+#     try:
+#         response = requests.post(
+#             "https://openrouter.ai/api/v1/chat/completions",
+#             headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
+#             json={
+#                 "model": "openai/gpt-oss-120b:free", 
+#                 "messages": [
+#                     {"role": "system", "content": "You extract structured financial data."},
+#                     {"role": "user", "content": prompt}
+#                 ],
+#                 "temperature": 0
+#             },
+#         )
+        
+#         # 🛡️ SAFETY CHECK: Did the API return a success code (200)?
+#         if response.status_code != 200:
+#             print(f"   ❌ [API ERROR] Server returned status {response.status_code}")
+#             return None
+            
+#         # 🛡️ SAFETY CHECK: Safely attempt to read the JSON response
+#         result = response.json()
+        
+#     except Exception as e:
+#         print(f"   ❌ [NETWORK ERROR] Failed to communicate with OpenRouter: {e}")
+#         return None
+
+#     if "choices" not in result:
+#         print(f"   ❌ [STEP 2 ERROR] API Response missing 'choices': {result}") 
+#         return None
+    
+#     content = result["choices"][0]["message"]["content"]
+#     content_clean = content.replace("```json", "").replace("```", "").strip()
+    
+#     try:
+#         parsed_json = json.loads(content_clean)
+#         print(f"   ↳ 🟩 Parsed {len(parsed_json)} transactions.")
+#         return parsed_json
+#     except Exception as e:
+#         print(f"   ↳ ⚠️ Failed to parse LLM string into JSON. Skipping chunk.")
+#         return None
+
+
+# -----------------------------
+# 1. HYBRID LLM MAPPER (Reads only the headers!)
+# -----------------------------
+def ask_llm_to_map_headers(headers, first_row):
+    print("🤖 Asking LLM to map the table columns...")
+    prompt = f"""
+    You are a financial data mapper. I am providing the table headers and the first data row from a bank statement.
+    Headers: {headers}
+    Data: {first_row}
+    
+    Return ONLY a JSON object mapping standard financial fields to their integer column indices (0-based).
+    Required keys: "date", "description". 
+    Optional keys: "debit", "credit", "amount", "balance".
+    
+    If a column doesn't exist, set its value to null.
+    Example: {{"date": 0, "description": 2, "debit": 3, "credit": 4, "amount": null, "balance": 5}}
+    
+    Respond ONLY with valid JSON. Do not include markdown formatting like ```json.
     """
     
     try:
@@ -112,99 +178,176 @@ def parse_with_llm(text):
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
             json={
-                "model": "openai/gpt-oss-120b:free", 
-                "messages": [
-                    {"role": "system", "content": "You extract structured financial data."},
-                    {"role": "user", "content": prompt}
-                ],
+                "model": "openai/gpt-oss-120b:free", # You can swap this to a faster model later!
+                "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0
             },
         )
-        
-        # 🛡️ SAFETY CHECK: Did the API return a success code (200)?
-        if response.status_code != 200:
-            print(f"   ❌ [API ERROR] Server returned status {response.status_code}")
-            return None
-            
-        # 🛡️ SAFETY CHECK: Safely attempt to read the JSON response
         result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        content_clean = content.replace("```json", "").replace("```", "").strip()
         
+        column_map = json.loads(content_clean)
+        print(f"✅ AI Successfully mapped columns: {column_map}")
+        return column_map
     except Exception as e:
-        print(f"   ❌ [NETWORK ERROR] Failed to communicate with OpenRouter: {e}")
+        print(f"❌ Failed to map columns: {e}")
         return None
 
-    if "choices" not in result:
-        print(f"   ❌ [STEP 2 ERROR] API Response missing 'choices': {result}") 
-        return None
+# -----------------------------
+# 2. FAST DETERMINISTIC EXTRACTOR (No AI Needed)
+# -----------------------------
+def extract_transactions_hybrid(pdf_bytes):
+    all_transactions = []
     
-    content = result["choices"][0]["message"]["content"]
-    content_clean = content.replace("```json", "").replace("```", "").strip()
-    
-    try:
-        parsed_json = json.loads(content_clean)
-        print(f"   ↳ 🟩 Parsed {len(parsed_json)} transactions.")
-        return parsed_json
-    except Exception as e:
-        print(f"   ↳ ⚠️ Failed to parse LLM string into JSON. Skipping chunk.")
-        return None
+    # Read the raw bytes sent by Node.js
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        column_map = None
+        
+        for page in pdf.pages:
+            tables = page.extract_tables()
+            print(f"📊 Found {len(tables)} tables on this page.")
+            for table in tables:
+                if not table or len(table) < 2: continue
+                
+                # If we haven't mapped the columns yet, ask the AI on the first table!
+                if not column_map:
+                    # Clean up None values in headers
+                    headers = [str(h).replace("\n", " ").strip() if h else "" for h in table[0]]
+                    row_1 = [str(c).replace("\n", " ").strip() if c else "" for c in table[1]]
+                    
+                    column_map = ask_llm_to_map_headers(headers, row_1)
+                    if not column_map: return [] # Failsafe
+
+                    start_idx = 1           #We know the first row of the very first table is a header
+                else :
+                    first_row_text = " ".join([str(cell).lower() for cell in table[0] if cell])
+                    if any(word in first_row_text for word in ["date", "description", "particulars", "amount", "balance", "withdrawal"]):
+                        start_idx = 1 # It's a header row, skip it!
+                    else:
+                        start_idx = 0 # It's a transaction row, don't skip it!
+                
+                # Now, use pure Python speed to loop the rest of the table!
+                for row in table[start_idx:]: # Skip headers
+                    # Clean the row data safely
+                    clean_row = [str(cell).replace("\n", " ").strip() if cell else "" for cell in row]
+                    
+                    try:
+                        date_idx = column_map.get("date")
+                        desc_idx = column_map.get("description")
+                        
+                        # Only accept rows that actually have a date and description
+                        if date_idx is not None and desc_idx is not None and clean_row[date_idx]:
+                            txn = {
+                                "date": clean_row[date_idx],
+                                "description": clean_row[desc_idx],
+                            }
+                            
+                            # Safely extract optional money fields
+                            if column_map.get("debit") is not None and clean_row[column_map["debit"]]:
+                                txn["debit"] = clean_row[column_map["debit"]]
+                            if column_map.get("credit") is not None and clean_row[column_map["credit"]]:
+                                txn["credit"] = clean_row[column_map["credit"]]
+                            if column_map.get("amount") is not None and clean_row[column_map["amount"]]:
+                                txn["amount"] = clean_row[column_map["amount"]]
+                            if column_map.get("balance") is not None and clean_row[column_map["balance"]]:
+                                txn["balance"] = clean_row[column_map["balance"]]
+                                
+                            all_transactions.append(txn)
+                    except IndexError:
+                        continue # Skip weird formatting rows
+
+    return all_transactions
 
 # -----------------------------
 # 3. FAST RULE-BASED ENGINE
 # -----------------------------
-def categorize_rule_based(desc: str) -> str:
-    # 🛡️ SAFETY CHECK: If desc is None or completely empty, return "Others"
-    if not desc: 
-        return "Others"
+MERCHANT_DICT = {
+    "Food": ["swiggy", "zomato", "restaurant", "mcdonalds", "kfc", "dominos", "starbucks", "food"],
+    "Travel": ["uber", "ola", "rapido", "irctc", "metro", "makemytrip", "yatra", "indigo", "ticket"],
+    "EMI": ["emi", "loan", "finance", "fin ", "epimoney", "fullerton", "bajaj", "cholamandalam", "aditya birla", "capital", "idfc"],
+    "Shopping": ["amazon", "flipkart", "meesho", "myntra", "reliance", "croma", "d-mart", "apparel", "clothing"]
+}
+
+def categorize_fuzzy(desc: str, amount: float) -> str:
+    if not desc: return "Others"
+    
+    # 💰 1. Absolute Rule: Positive money is Income!
+    if amount > 0:
+        return "Income"
         
-    # Force it to be a string just in case the LLM returned a number
-    desc_lower = str(desc).lower() 
+    desc_lower = str(desc).lower()
     
-    if any(x in desc_lower for x in ["swiggy", "zomato", "restaurant", "food"]): return "Food"
-    if any(x in desc_lower for x in ["uber", "ola", "rapido", "irctc", "metro"]): return "Travel"
-    if any(x in desc_lower for x in ["emi", "loan", "finance", "epimoney", "fullerton", "bajaj"]): return "EMI"
-    if any(x in desc_lower for x in ["amazon", "flipkart", "meesho"]): return "Shopping"
-    if any(x in desc_lower for x in ["salary", "deposit", "credit"]): return "Income"
-    
+    # 🧠 2. Fuzzy String Matching
+    for category, keywords in MERCHANT_DICT.items():
+        # Scans the messy bank string to see if any of our keywords are hiding inside it
+        match = process.extractOne(desc_lower, keywords, scorer=fuzz.partial_ratio)
+        if match:
+            best_match, score, _ = match
+            if score > 85:  # 85% confidence threshold allows for slight typos!
+                return category
+                
     return "Others"
 
 # -----------------------------
 # 4. BATCH LLM ENGINE
 # -----------------------------
-def categorize_llm_batch(descriptions: List[str]) -> List[str]:
-    print(f"🧠 [STEP 4] Sending {len(descriptions)} unknown items to LLM Batch...")
+def categorize_llm_batch_context(transactions: list) -> list:
+    print(f"🧠 [STEP 4] Sending {len(transactions)} unknown items to Context-Aware AI Batch...")
+    
     prompt = f"""
-    Categorize the following transaction descriptions into exactly one of these categories:
+    Categorize the following financial transactions into exactly one of these categories:
     Food, Travel, EMI, Shopping, Income, Others.
     
-    Transactions: {json.dumps(descriptions)}
+    CRITICAL RULES:
+    1. If the 'amount' is positive, it MUST be 'Income'.
+    2. If the 'amount' is negative, it is an expense. IGNORE the word "Deposit" or "Credit" in the description if the amount is negative.
     
-    Respond ONLY with a valid JSON array of strings. The array must contain exactly {len(descriptions)} items.
+    Transactions: {json.dumps(transactions)}
+    
+    Respond ONLY with a valid JSON array of strings, exactly matching the length of the input.
     """
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
             json={
-                "model": "openai/gpt-oss-120b:free",
+                # Note: Free models frequently get overloaded. If Gemini keeps failing, 
+                # try swapping this to "meta-llama/llama-3-8b-instruct:free"
+                "model": "openai/gpt-oss-120b:free", 
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0
             }
         )
         
-        result_text = response.json()["choices"][0]["message"]["content"].strip()
+        # 🛡️ SAFETY CHECK 1: Did the server actually succeed?
+        if response.status_code != 200:
+            print(f"   ❌ [API ERROR] OpenRouter returned status {response.status_code}")
+            print(f"   ↳ DETAILS: {response.text}")
+            return ["Others"] * len(transactions)
+            
+        result_data = response.json()
+        
+        # 🛡️ SAFETY CHECK 2: Did it return the expected data structure?
+        if "choices" not in result_data:
+            print(f"   ❌ [API ERROR] Missing 'choices' in response: {result_data}")
+            return ["Others"] * len(transactions)
+        
+        result_text = result_data["choices"][0]["message"]["content"].strip()
         result_text = re.sub(r'^```json\s*|\s*```$', '', result_text, flags=re.IGNORECASE).strip()
         parsed = json.loads(result_text)
         
-        if isinstance(parsed, list) and len(parsed) == len(descriptions):
-            print(f"✅ [STEP 4] Successfully batch categorized {len(parsed)} items.")
+        if isinstance(parsed, list) and len(parsed) == len(transactions):
+            print(f"✅ [STEP 4] Successfully AI-categorized {len(parsed)} complex items.")
             return parsed
         else:
-            print(f"⚠️ [STEP 4 ERROR] Array length mismatch.")
+            print(f"⚠️ [STEP 4 ERROR] Array length mismatch. Expected {len(transactions)}, got {len(parsed) if isinstance(parsed, list) else 'Invalid'}.")
+            print(f"   ↳ RAW OUTPUT: {result_text}")
             
     except Exception as e:
-        print(f"🚨 [STEP 4 FATAL ERROR] LLM Batch Error: {e}")
+        print(f"🚨 [STEP 4 FATAL ERROR] AI Batch Error: {e}")
         
-    return ["Others"] * len(descriptions)
+    return ["Others"] * len(transactions)
 
 # -----------------------------
 # 5. MAIN API ROUTE
@@ -217,28 +360,15 @@ async def process_pdf(request: Request, user_id: str):
     
     content = await request.body()
     
-    # ✂️ Step 1: Extract and Chunk
-    chunks = extract_text_chunks(content, chunk_size=4000)
-    print(f"📦 Created {len(chunks)} strict chunks to process safely.")
+    # ⚡ Step 1 & 2: Extract mapping and all rows dynamically!
+    print("📄 Parsing PDF Tables...")
+    all_transactions = extract_transactions_hybrid(content)
     
-    all_transactions = []
-
-    # 🧠 Step 2: Loop through chunks
-    for idx, chunk in enumerate(chunks):
-        print(f"\n🔄 Processing Chunk {idx + 1}/{len(chunks)}...")
-        
-        for attempt in range(1, 3):
-            transactions = parse_with_llm(chunk)
-            if transactions: 
-                all_transactions.extend(transactions)
-                break
-            print(f"   ⚠️ Attempt {attempt} failed, retrying...")
-
     if not all_transactions:
-        print("\n❌ FATAL: Failed to parse any transactions across all chunks.")
+        print("\n❌ FATAL: Failed to parse any transactions from tables.")
         return {"error": "Failed to parse transactions"}
 
-    print(f"\n✅ SUCCESS: Total transactions extracted from all chunks: {len(all_transactions)}")
+    print(f"\n✅ SUCCESS: Instantly extracted {len(all_transactions)} transactions via Hybrid parsing!")    
 
     # ⚙️ Step 3: Run Fast Rules
     # 🛡️ Use 'or ""' to convert None to an empty string safely
@@ -247,30 +377,36 @@ async def process_pdf(request: Request, user_id: str):
     llm_queue = []
     llm_indices = []
 
-    print(f"⚙️ [STEP 3] Running Fast Rules on {len(descriptions)} items...")
+    print(f"⚙️ [STEP 3] Running Fuzzy Matcher on {len(descriptions)} items...")
     for i, desc in enumerate(descriptions):
-        cat = categorize_rule_based(desc)
+        amount_val = float(all_transactions[i].get("amount") or all_transactions[i].get("credit") or 0)
+        if all_transactions[i].get("debit"):
+            amount_val = -abs(float(all_transactions[i].get("debit")))
+            
+        # Call the new fuzzy matcher
+        cat = categorize_fuzzy(desc, amount_val)
+        
         if cat == "Others":
-            llm_queue.append(desc)
+            # 🚀 THE FIX: We now queue up an OBJECT containing both desc and amount for the AI
+            llm_queue.append({"desc": desc, "amount": amount_val})
             llm_indices.append(i)
         else:
             final_categories[i] = cat
 
-    print(f"📊 [STEP 3] Rules engine matched {len(descriptions) - len(llm_queue)} items.")
+    print(f"📊 [STEP 3] Fuzzy Engine instantly matched {len(descriptions) - len(llm_queue)} items.")
 
-    # 🤖 Step 4: Run LLM on leftovers
+    # 🤖 Step 4: Run Context-Aware AI on leftovers
     if llm_queue:
-        # If there are a ton of 'Others', we chunk the batch API call too so it doesn't crash!
-        print(f"   ↳ {len(llm_queue)} items need AI categorization.")
+        print(f"   ↳ {len(llm_queue)} complex items require AI analysis.")
         batch_size = 50 
         llm_results = []
         
         for i in range(0, len(llm_queue), batch_size):
             sub_queue = llm_queue[i:i + batch_size]
-            sub_results = categorize_llm_batch(sub_queue)
+            # Call the new Context-Aware AI
+            sub_results = categorize_llm_batch_context(sub_queue) 
             llm_results.extend(sub_results)
             
-        # Ensure we don't crash if LLM returned wrong number of items
         if len(llm_results) == len(llm_queue):
             for index, cat in zip(llm_indices, llm_results):
                 final_categories[index] = cat

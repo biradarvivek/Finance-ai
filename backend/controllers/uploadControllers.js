@@ -10,8 +10,10 @@ exports.uploadFile = async (req, res) => {
       `http://localhost:8000/process?user_id=${req.userId}`, // 👈 UPDATED HERE
       req.file.buffer,
       {
-        headers: { "Content-Type": "application/pdf" },
-        Authorization: req.header("Authorization"),
+        headers: {
+          "Content-Type": "application/pdf",
+          Authorization: req.header("Authorization"), // ✅ FIXED: Moved inside headers!
+        },
       },
     );
 
