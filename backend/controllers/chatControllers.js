@@ -35,7 +35,7 @@ exports.askQuestion = async (req, res) => {
     // B. Forward to Python FastAPI
     // Note: We use dynamic import for fetch in older Node versions, but native fetch works in Node 18+
     const pythonResponse = await fetch(
-      `http://localhost:8000/chat?query=${encodeURIComponent(userQuery)}&user_id=${req.userId}&history=${encodeURIComponent(historyString)}&token=${token}`,
+      `${process.env.PYTHON_API_URL}/chat?query=${encodeURIComponent(userQuery)}&user_id=${req.userId}&history=${encodeURIComponent(historyString)}&token=${token}`,
       {
         headers: {
           Authorization: req.header("Authorization"), // 👈 Forward the user's exact token!

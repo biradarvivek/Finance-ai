@@ -28,10 +28,10 @@ export default function ChatBox({
           </div>
           <div>
             <h2 className="text-base font-bold text-white tracking-wide">
-              Agent Terminal
+              Financial Advisor
             </h2>
             <p className="text-xs text-slate-400 font-mono">
-              Awaiting direct command input...
+              Ask me anything about your finances.
             </p>
           </div>
         </div>
@@ -84,7 +84,9 @@ export default function ChatBox({
         <input
           type="text"
           placeholder={
-            insights ? "Query the matrix..." : "System locked. Require data."
+            insights
+              ? "E.g., What are my spending patterns?"
+              : "Upload your statement to start chatting!"
           }
           value={chatInput}
           onChange={(e) => setChatInput(e.target.value)}
@@ -96,7 +98,7 @@ export default function ChatBox({
           disabled={!chatInput.trim() || !insights}
           className="bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-cyan-500/20"
         >
-          Execute
+          Send
         </button>
       </form>
     </div>

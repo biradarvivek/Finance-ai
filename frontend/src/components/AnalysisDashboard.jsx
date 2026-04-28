@@ -39,10 +39,10 @@ export default function AnalysisDashboard({
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50 p-6 rounded-2xl border border-slate-700/50">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">
-            Temporal Analysis
+            Visual Analytics
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Cross-reference sector spending.
+            Compare your month-over-month spending trends.
           </p>
         </div>
 
@@ -155,7 +155,7 @@ export default function AnalysisDashboard({
           <div className="bg-slate-900/50 rounded-2xl border border-slate-700/50 p-6 flex flex-col relative overflow-hidden h-[420px]">
             <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-cyan-500/10 blur-3xl rounded-full pointer-events-none"></div>
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 z-10">
-              Delta Comparison
+              Trend Comparison
             </h3>
 
             {/* 🔥 FIX: Hardcoded height wrapper to prevent SVG collapse */}
@@ -229,20 +229,20 @@ export default function AnalysisDashboard({
           {/* Ledger Table spans both columns below charts */}
           <div className="lg:col-span-2 bg-slate-900/50 rounded-2xl border border-slate-700/50 p-6 mt-2">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">
-              Database Ledger
+              Detailed Ledger
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-700/50 text-xs text-slate-400 uppercase tracking-wider">
-                    <th className="p-4 font-bold">Category Sector</th>
+                    <th className="p-4 font-bold">Category</th>
                     <th className="p-4 font-bold text-right">
                       {deepAnalysis.months.previous} Anchor
                     </th>
                     <th className="p-4 font-bold text-right">
                       {deepAnalysis.months.current} Target
                     </th>
-                    <th className="p-4 font-bold text-right">Delta Matrix</th>
+                    <th className="p-4 font-bold text-right">Trend</th>
                   </tr>
                 </thead>
                 <tbody>

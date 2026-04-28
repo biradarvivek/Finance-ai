@@ -7,7 +7,7 @@ exports.uploadFile = async (req, res) => {
     // 1. 🚀 PASS THE USER ID TO PYTHON
     // This ensures ChromaDB tags these vectors for the correct user!
     const response = await axios.post(
-      `http://localhost:8000/process?user_id=${req.userId}`, // 👈 UPDATED HERE
+      `${process.env.PYTHON_API_URL}/process?user_id=${req.userId}`, // 👈 UPDATED HERE
       req.file.buffer,
       {
         headers: {

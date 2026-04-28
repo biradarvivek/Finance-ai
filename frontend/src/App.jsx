@@ -213,7 +213,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight">
-                FinVault Core
+                Fin AI
               </h1>
               <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest">
                 User: {user?.username || user?.email} // Status: Active

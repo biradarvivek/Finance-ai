@@ -26,7 +26,7 @@ export default function UploadCard({
               ></path>
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-white">Data Ingestion</h2>
+          <h2 className="text-lg font-bold text-white">Add Your Statement</h2>
         </div>
 
         <form onSubmit={uploadFile} className="flex flex-col gap-4">
@@ -53,7 +53,7 @@ export default function UploadCard({
             disabled={isUploading || !file}
             className="bg-slate-900 hover:bg-slate-950 disabled:bg-slate-800 border border-slate-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg w-full disabled:text-slate-500 disabled:cursor-not-allowed"
           >
-            {isUploading ? "Extracting Vectors..." : "Process Matrix"}
+            {isUploading ? "Analyzing..." : "Analyze My Expenses"}
           </button>
         </form>
       </div>
@@ -75,7 +75,7 @@ export default function UploadCard({
             </div>
             <div className="flex justify-between items-end pt-1">
               <span className="text-sm font-medium text-slate-400">
-                Nodes Mapped
+                We found and organized your transactions
               </span>
               <span className="font-bold text-3xl text-white tracking-tighter">
                 {insights.totalTransactions}
