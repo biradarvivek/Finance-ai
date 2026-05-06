@@ -7,7 +7,7 @@ import json
 import re
 import os
 from dotenv import load_dotenv
-from vector_store import vector_db
+from vector_store import PineconeVectorStore
 from fastapi.middleware.cors import CORSMiddleware #
 import re
 from datetime import datetime
@@ -422,7 +422,7 @@ async def process_pdf(request: Request, user_id: str):
 
     # SAVE TO CHROMADB FOR THE CHATBOT
     print(f"🗄️ [STEP 6] Saving to ChromaDB Vector Database for user {user_id}...")
-    vector_db.add_transactions(all_transactions, user_id)
+    PineconeVectorStore().add_transactions(all_transactions, user_id)
 
     print("🏁 PROCESSING COMPLETE. Returning massive payload to Node.js.")
     print("=================================================\n")
@@ -510,7 +510,7 @@ async def chat_with_transactions(query: str, user_id: str, history: str = "", to
                 extracted_date = raw_date.upper()
 
         # Retrieve from ChromaDB
-        matches = vector_db.search(query, user_id=user_id, exact_date=extracted_date, top_k=15)
+        matches = PineconeVectorStore().search(query, user_id=user_id, exact_date=extracted_date, top_k=15)
         
         if not matches:
             return {"answer": "I could not find any transactions matching your request in the current statement."}

@@ -1,30 +1,32 @@
-import chromadb
-from chromadb.utils import embedding_functions
+import os
+from pinecone import Pinecone
+from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
 
-print("⏳ Initializing ChromaDB and Embedding Model...")
+load_dotenv()
 
-# 🔥 THE FIX: Using Chroma's default ONNX engine. ZERO PyTorch required!
-# This works perfectly now that you are on Python 3.11.
-default_ef = embedding_functions.DefaultEmbeddingFunction()
-
-class TransactionVectorDB:
+class PineconeVectorStore:
     def __init__(self):
-        self.client = chromadb.PersistentClient(path="./chroma_db")
-        self.collection = self.client.get_or_create_collection(
-            name="financial_transactions",
-            embedding_function=default_ef
-        )
-        print(f"📂 ChromaDB ready! Currently holding {self.collection.count()} transactions.")
+        print("☁️ Connecting to Pinecone Cloud...")
+        # 1. Initialize Pinecone
+        api_key = os.getenv("PINECONE_API_KEY")
+        if not api_key:
+            raise ValueError("Missing PINECONE_API_KEY in environment variables.")
+            
+        self.pc = Pinecone(api_key=api_key)
+        self.index = self.pc.Index("finance-ai") # Must match your Pinecone index name
+        
+        # 2. Initialize the Local Embedding Model (Dimensions: 384)
+        print("🧠 Loading local embedding model...")
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    def add_transactions(self, transactions: list, user_id: str): # 👈 ADDED user_id
-        if not transactions:
-            return
-
-        documents, metadatas, ids = [], [], []
-        start_id = self.collection.count()
-
+    def add_transactions(self, transactions: list, user_id: str):
+        if not transactions: return
+        
+        vectors_to_upsert = []
+        
         for i, txn in enumerate(transactions):
-            # 🔥 THE FIX: Hunt for debit/credit if 'amount' doesn't exist yet
+            # 1. Create the text chunk the AI will read
             debit = txn.get("debit")
             credit = txn.get("credit")
             
@@ -39,53 +41,50 @@ class TransactionVectorDB:
             cat = txn.get("category", "Others")
             date = txn.get("date", "Unknown Date")
             
-            action = "spent" if amount < 0 else "received"
-            text = f"On {date}, {action} {abs(amount)} on {desc}. Category: {cat}."
+            text_to_embed = f"Date: {date} | Description: {desc} | Amount: {amount} | Category: {cat}"
             
-            documents.append(text)
+            # 2. Convert text to a 384-dimensional vector
+            embedding = self.model.encode(text_to_embed).tolist()
             
-            # 🔒 SECURITY: Tag the metadata with the specific user_id
-            metadatas.append({
-                "date": str(date), 
-                "description": str(desc),
-                "amount": float(amount), 
-                "category": str(cat),
-                "user_id": str(user_id) # 👈 ADDED user_id
+            # 3. Format exactly how Pinecone expects it
+            # We must pass the user_id in the metadata for secure Multi-Tenancy!
+            vectors_to_upsert.append({
+                "id": f"txn_{user_id}_{i}_{hash(text_to_embed)}", 
+                "values": embedding,
+                "metadata": {
+                    "user_id": str(user_id),
+                    "text": text_to_embed,
+                    "date": str(date)
+                }
             })
+        
+        # 4. Upsert to Pinecone in batches of 100 to avoid payload limits
+        batch_size = 100
+        for i in range(0, len(vectors_to_upsert), batch_size):
+            self.index.upsert(vectors=vectors_to_upsert[i:i + batch_size])
             
-            # 🔒 SECURITY: Make the ID completely unique per user
-            ids.append(f"txn_{user_id}_{start_id + i}")
+        print(f"💾 Successfully saved {len(transactions)} vectors to Pinecone Cloud!")
 
-        print(f"🧠 Generating embeddings and saving {len(documents)} items to ChromaDB for user {user_id}...")
-        self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
-        print("💾 Saved successfully to ChromaDB!")
-
-    def search(self, query: str, user_id: str, exact_date: str = None, top_k=15): # 👈 Bumped to 15!
-        if self.collection.count() == 0: return []
+    def search(self, query: str, user_id: str, exact_date: str = None, top_k=15):
+        # 1. Convert user's question into a vector
+        query_vector = self.model.encode(query).tolist()
         
-        print(f"🔍 Searching ChromaDB for: '{query}' (User: {user_id})")
+        # 2. Setup the security filter (This is how we separate thousands of users)
+        search_filter = {"user_id": str(user_id)}
         
-        # 🧠 The Agentic Router Logic
         if exact_date:
-            print(f"🎯 EXACT MATCH MODE: Forcing database to only fetch transactions from {exact_date}")
-            # Use ChromaDB's $and operator to enforce TWO security locks
-            where_clause = {
-                "$and": [
-                    {"user_id": str(user_id)},
-                    {"date": exact_date}
-                ]
-            }
-        else:
-            # Standard semantic search
-            where_clause = {"user_id": str(user_id)}
-
-        results = self.collection.query(
-            query_texts=[query], 
-            n_results=top_k,
-            where=where_clause 
+            print(f"🎯 EXACT MATCH MODE: Forcing Pinecone to fetch transactions from {exact_date}")
+            search_filter["date"] = exact_date
+            
+        # 3. Search the cloud database
+        print(f"🔍 Searching Pinecone for: '{query}' (User: {user_id}, Fetching up to {top_k} items)")
+        results = self.index.query(
+            vector=query_vector,
+            filter=search_filter,
+            top_k=top_k,
+            include_metadata=True
         )
         
-        # We must return the raw text "documents" so the LLM can read them
-        return results["documents"][0] if results["documents"] else []
-
-vector_db = TransactionVectorDB()
+        # 4. Extract just the raw text chunks to feed to the LLM
+        if not results.get('matches'): return []
+        return [match['metadata']['text'] for match in results['matches']]
