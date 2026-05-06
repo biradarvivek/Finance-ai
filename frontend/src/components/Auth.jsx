@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import axios from "axios";
 
 export default function Auth({ onLoginSuccess }) {
+  // This will use your Render URL in production, but fall back to localhost when you are coding on your machine!
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: "",
@@ -24,7 +26,7 @@ export default function Auth({ onLoginSuccess }) {
       const payload = isLogin
         ? { email: formData.email, password: formData.password }
         : formData;
-      const res = await axios.post(`http://localhost:5000${endpoint}`, payload);
+      const res = await axios.post(`${API_URL}${endpoint}`, payload);
       onLoginSuccess(res.data);
     } catch (err) {
       setError(

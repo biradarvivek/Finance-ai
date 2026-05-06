@@ -16,12 +16,9 @@ axios.interceptors.response.use(
       originalRequest._retry = true;
       try {
         const currentRefreshToken = localStorage.getItem("refreshToken");
-        const res = await axios.post(
-          "http://localhost:5000/api/auth/refresh-token",
-          {
-            refreshToken: currentRefreshToken,
-          },
-        );
+        const res = await axios.post(`${API_URL}/api/auth/refresh-token`, {
+          refreshToken: currentRefreshToken,
+        });
         const newAccessToken = res.data.accessToken;
         const newRefreshToken = res.data.refreshToken;
         localStorage.setItem("accessToken", newAccessToken);
@@ -39,6 +36,8 @@ axios.interceptors.response.use(
 );
 
 export default function App() {
+  // This will use your Render URL in production, but fall back to localhost when you are coding on your machine!
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
   const [token, setToken] = useState(
     localStorage.getItem("accessToken") || null,
   );
@@ -66,12 +65,9 @@ export default function App() {
     const restoreDashboard = async () => {
       if (!token) return;
       try {
-        const statusRes = await axios.get(
-          "http://localhost:5000/api/analysis/status",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        const statusRes = await axios.get(`${API_URL}/api/analysis/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (statusRes.data.hasData) {
           setInsights({
             totalTransactions: statusRes.data.totalTransactions,
@@ -79,12 +75,9 @@ export default function App() {
           });
           fetchAvailableMonths();
         }
-        const chatRes = await axios.get(
-          "http://localhost:5000/api/chat/history",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        const chatRes = await axios.get(`${API_URL}/api/chat/history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (chatRes.data.length > 0) {
           const formattedHistory = chatRes.data.map((msg) => ({
             role: msg.role,
@@ -126,16 +119,12 @@ export default function App() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/upload",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${token}`,
-          },
+      const res = await axios.post(`${API_URL}/api/upload`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`,
         },
-      );
+      });
       setInsights({
         totalTransactions: res.data.count || 0,
         message: "Matrix parsed securely!",
@@ -150,7 +139,7 @@ export default function App() {
 
   const fetchAvailableMonths = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/analysis/months", {
+      const res = await axios.get(`${API_URL}/api/analysis/months`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setAvailableMonths(res.data);
@@ -164,7 +153,7 @@ export default function App() {
     setIsAnalyzing(true);
     try {
       const res = await axios.get(
-        `http://localhost:5000/api/analysis/compare?current=${selectedCurrent}&previous=${selectedPrevious}`,
+        `${API_URL}/api/analysis/compare?current=${selectedCurrent}&previous=${selectedPrevious}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setDeepAnalysis(res.data);
@@ -183,7 +172,7 @@ export default function App() {
     setChatInput("");
     setIsTyping(true);
     try {
-      const res = await axios.get(`http://localhost:5000/api/chat`, {
+      const res = await axios.get(`${API_URL}/api/chat`, {
         params: { query: userMsg },
         headers: { Authorization: `Bearer ${token}` },
       });
