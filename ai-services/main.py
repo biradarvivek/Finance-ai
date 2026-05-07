@@ -439,6 +439,7 @@ async def process_pdf(request: Request, user_id: str):
 @app.get("/chat", dependencies=[Depends(verify_jwt)])
 async def chat_with_transactions(query: str, user_id: str, history: str = "", token: str = ""):
     print(f"\n💬 [CHATBOT] User {user_id} asked: '{query}'")
+    print("token", token)
     search_context = f"{history} {query}"
     
     # =========================================================

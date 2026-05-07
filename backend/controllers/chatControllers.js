@@ -19,6 +19,8 @@ exports.askQuestion = async (req, res) => {
 
     const authHeader = req.header("Authorization");
     const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+    console.log("Received question:", userQuery);
+    console.log("Forwarding token to Python API:", token ? "Yes" : "No");
 
     const pastMessages = await Chat.find({ userId: req.userId })
       .sort({ createdAt: -1 })
@@ -43,6 +45,7 @@ exports.askQuestion = async (req, res) => {
       },
     );
     const data = await pythonResponse.json();
+    console.log("Received answer from Python API:", data.answer);
 
     // C. Save the AI'S answer to MongoDB
     await Chat.create({ userId: req.userId, role: "ai", text: data.answer });
