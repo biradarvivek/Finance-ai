@@ -1,9 +1,12 @@
 import React, { useState } from "react";
 import axios from "axios";
+import toast from "react-hot-toast"; // 👈 Import toast
 
 export default function Auth({ onLoginSuccess }) {
-  // This will use your Render URL in production, but fall back to localhost when you are coding on your machine!
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const API_URL =
+    import.meta.env.MODE === "production"
+      ? import.meta.env.VITE_API_URL
+      : "http://localhost:5000";
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: "",
@@ -11,35 +14,39 @@ export default function Auth({ onLoginSuccess }) {
     fullName: "",
     username: "",
   });
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setIsLoading(true);
-    try {
-      const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
-      const payload = isLogin
-        ? { email: formData.email, password: formData.password }
-        : formData;
-      const res = await axios.post(`${API_URL}${endpoint}`, payload);
-      onLoginSuccess(res.data);
-    } catch (err) {
-      setError(
-        err.response?.data?.error || "Neural breach detected. Try again.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
+
+    const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
+    const payload = isLogin
+      ? { email: formData.email, password: formData.password }
+      : formData;
+
+    // 🚀 THE MAGIC: toast.promise handles the loading, success, and error UI automatically!
+    const authPromise = axios.post(`${API_URL}${endpoint}`, payload);
+
+    toast.promise(authPromise, {
+      loading: isLogin ? "Authenticating..." : "Initializing Protocol...",
+      success: (res) => {
+        // This runs if the API call is successful (Status 200)
+        setTimeout(() => onLoginSuccess(res.data), 1000); // Slight delay so they can read the success message
+        return isLogin ? "Access Granted!" : "Vault Created Successfully!";
+      },
+      error: (err) => {
+        // This runs if the API call fails (Status 400, 500, etc.)
+        return (
+          err.response?.data?.error || "Neural breach detected. Try again."
+        );
+      },
+    });
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0f172a] p-4 selection:bg-cyan-500/30 relative overflow-hidden">
-      {/* Background Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/20 blur-[120px] rounded-full pointer-events-none"></div>
 
       <div className="max-w-md w-full bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/10 p-10 shadow-2xl shadow-black/50 relative z-10">
@@ -59,11 +66,7 @@ export default function Auth({ onLoginSuccess }) {
           </p>
         </div>
 
-        {error && (
-          <div className="bg-rose-500/10 border border-rose-500/50 text-rose-400 p-4 rounded-xl text-sm text-center mb-6 backdrop-blur-sm">
-            {error}
-          </div>
-        )}
+        {/* ❌ Notice we deleted the red error box from here. The Toaster handles it now! */}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           {!isLogin && (
@@ -122,16 +125,12 @@ export default function Auth({ onLoginSuccess }) {
               placeholder="••••••••"
             />
           </div>
+
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-cyan-500/20 mt-4 tracking-wide"
+            className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-cyan-500/20 mt-4 tracking-wide"
           >
-            {isLoading
-              ? "Authenticating..."
-              : isLogin
-                ? "DECRYPT & ENTER"
-                : "INITIALIZE PROTOCOL"}
+            {isLogin ? "DECRYPT & ENTER" : "INITIALIZE PROTOCOL"}
           </button>
         </form>
 
@@ -139,10 +138,7 @@ export default function Auth({ onLoginSuccess }) {
           {isLogin ? "No vault access? " : "Already encrypted? "}
           <button
             type="button"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError("");
-            }}
+            onClick={() => setIsLogin(!isLogin)}
             className="text-cyan-400 font-bold hover:text-cyan-300 transition-colors"
           >
             {isLogin ? "Request link" : "Sign in here"}

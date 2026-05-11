@@ -23,42 +23,36 @@ class PineconeVectorStore:
     def add_transactions(self, transactions: list, user_id: str):
         if not transactions: return
         
-        vectors_to_upsert = []
+        print(f"🚀 Preparing {len(transactions)} transactions for batch encoding...")
         
+        # 1. Prepare ALL texts into a single list
+        texts_to_embed = []
+        for txn in transactions:
+            desc = txn.get('description', '')
+            date = txn.get('date', '')
+            amount = txn.get('amount', 0)
+            category = txn.get('category', 'Others')
+            texts_to_embed.append(f"Date: {date} | Description: {desc} | Amount: {amount} | Category: {category}")
+            
+        # 2. BATCH ENCODE: We pass the entire list to the AI at once! (100x faster)
+        print("🧠 Processing AI Embeddings in one massive batch...")
+        embeddings = self.model.encode(texts_to_embed).tolist()
+        
+        # 3. Format exactly how Pinecone expects it
+        vectors_to_upsert = []
         for i, txn in enumerate(transactions):
-            # 1. Create the text chunk the AI will read
-            debit = txn.get("debit")
-            credit = txn.get("credit")
-            
-            if debit:
-                amount = -abs(float(debit))
-            elif credit:
-                amount = abs(float(credit))
-            else:
-                amount = float(txn.get("amount", 0))
-
-            desc = txn.get("description", "Unknown")
-            cat = txn.get("category", "Others")
-            date = txn.get("date", "Unknown Date")
-            
-            text_to_embed = f"Date: {date} | Description: {desc} | Amount: {amount} | Category: {cat}"
-            
-            # 2. Convert text to a 384-dimensional vector
-            embedding = self.model.encode(text_to_embed).tolist()
-            
-            # 3. Format exactly how Pinecone expects it
-            # We must pass the user_id in the metadata for secure Multi-Tenancy!
             vectors_to_upsert.append({
-                "id": f"txn_{user_id}_{i}_{hash(text_to_embed)}", 
-                "values": embedding,
+                "id": f"txn_{user_id}_{i}_{hash(texts_to_embed[i])}", 
+                "values": embeddings[i], # Grab the pre-calculated embedding
                 "metadata": {
                     "user_id": str(user_id),
-                    "text": text_to_embed,
-                    "date": str(date)
+                    "text": texts_to_embed[i],
+                    "date": str(txn.get('date', ''))
                 }
             })
         
-        # 4. Upsert to Pinecone in batches of 100 to avoid payload limits
+        # 4. Upsert to Pinecone in batches of 100
+        print("☁️ Uploading lightning-fast batch to Pinecone...")
         batch_size = 100
         for i in range(0, len(vectors_to_upsert), batch_size):
             self.index.upsert(vectors=vectors_to_upsert[i:i + batch_size])

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import toast, { Toaster } from "react-hot-toast"; // 👈 IMPORT ADDED
 
 // Components
 import UploadCard from "./components/UploadCard";
@@ -28,7 +29,8 @@ axios.interceptors.response.use(
       } catch (refreshError) {
         console.error("Session completely expired. Please log in again.");
         localStorage.clear();
-        window.location.reload();
+        toast.error("Session expired. Re-authenticating..."); // 👈 TOAST ADDED
+        setTimeout(() => window.location.reload(), 1500); // Added slight delay so toast is visible
       }
     }
     return Promise.reject(error);
@@ -36,8 +38,11 @@ axios.interceptors.response.use(
 );
 
 export default function App() {
-  // This will use your Render URL in production, but fall back to localhost when you are coding on your machine!
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const API_URL =
+    import.meta.env.MODE === "production"
+      ? import.meta.env.VITE_API_URL
+      : "http://localhost:5000";
+  // console.log("API URL:", API_URL); // Debugging line to confirm API URL
   const [token, setToken] = useState(
     localStorage.getItem("accessToken") || null,
   );
@@ -103,6 +108,7 @@ export default function App() {
     localStorage.setItem("user", JSON.stringify(authData.user));
   };
 
+  // 🚪 LOGOUT TOAST ADDED
   const handleLogout = () => {
     setToken(null);
     setUser(null);
@@ -110,31 +116,48 @@ export default function App() {
     setInsights(null);
     setDeepAnalysis(null);
     setMessages([{ role: "ai", text: "Session terminated. Please log in." }]);
+    toast.success("Successfully disconnected from the Vault.");
   };
 
+  // 📤 UPLOAD TOAST PROMISE ADDED
   const uploadFile = async (e) => {
     e.preventDefault();
-    if (!file) return alert("Select a secure PDF matrix first.");
+    if (!file) {
+      toast.error("Select a secure PDF matrix first."); // Replaced alert()
+      return;
+    }
+
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
-    try {
-      const res = await axios.post(`${API_URL}/api/upload`, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${token}`,
+
+    // 1. Define the Promise
+    const uploadRequest = axios.post(`${API_URL}/api/upload`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    // 2. Feed it to the Toaster
+    toast
+      .promise(uploadRequest, {
+        loading: "Encrypting and analyzing statement...",
+        success: (res) => {
+          setInsights({
+            totalTransactions: res.data.count || 0,
+            message: "Matrix parsed securely!",
+          });
+          fetchAvailableMonths();
+          return "Upload complete! AI is ready.";
         },
+        error: (err) => {
+          return err.response?.data?.error || "Upload failed. Core breach.";
+        },
+      })
+      .finally(() => {
+        setIsUploading(false); // Ensures the button re-enables whether success or fail
       });
-      setInsights({
-        totalTransactions: res.data.count || 0,
-        message: "Matrix parsed securely!",
-      });
-      fetchAvailableMonths();
-    } catch (error) {
-      alert("Upload failed. Core breach.");
-    } finally {
-      setIsUploading(false);
-    }
   };
 
   const fetchAvailableMonths = async () => {
@@ -158,6 +181,7 @@ export default function App() {
       );
       setDeepAnalysis(res.data);
     } catch (error) {
+      toast.error("Failed to fetch deep analysis."); // 👈 TOAST ADDED
       setDeepAnalysis(null);
     } finally {
       setIsAnalyzing(false);
@@ -178,6 +202,7 @@ export default function App() {
       });
       setMessages((prev) => [...prev, { role: "ai", text: res.data.answer }]);
     } catch (error) {
+      toast.error("Neural link severed."); // 👈 TOAST ADDED
       setMessages((prev) => [
         ...prev,
         { role: "ai", text: "Neural link severed. Retrying connection." },
@@ -191,6 +216,30 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-8 font-sans selection:bg-cyan-500/30">
+      {/* 🎨 GLOBAL TOASTER ADDED HERE WITH CYBERPUNK STYLING */}
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          style: {
+            background: "#1e293b",
+            color: "#fff",
+            border: "1px solid #334155",
+          },
+          success: {
+            iconTheme: {
+              primary: "#06b6d4",
+              secondary: "#fff",
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: "#f43f5e",
+              secondary: "#fff",
+            },
+          },
+        }}
+      />
+
       <div className="max-w-[1400px] mx-auto flex flex-col gap-6">
         {/* Glass Header */}
         <header className="flex justify-between items-center bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl border border-white/10 shadow-2xl">
