@@ -6,6 +6,7 @@ export default function UploadCard({
   uploadFile,
   isUploading,
   insights,
+  handleExportExcel,
 }) {
   return (
     <>
@@ -82,6 +83,26 @@ export default function UploadCard({
               </span>
             </div>
           </div>
+
+          <button
+            onClick={handleExportExcel}
+            className="w-full mt-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold py-3 px-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 group"
+          >
+            <svg
+              className="w-5 h-5 text-emerald-400 group-hover:text-emerald-300 transition-colors"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+              ></path>
+            </svg>
+            Download Excel Matrix
+          </button>
         </div>
       )}
     </>

@@ -8,6 +8,11 @@ import ChatBox from "./components/ChatBox";
 import AnalysisDashboard from "./components/AnalysisDashboard";
 import Auth from "./components/Auth";
 
+const API_URL =
+  import.meta.env.MODE === "production"
+    ? import.meta.env.VITE_API_URL
+    : "http://localhost:5000";
+
 // 🔄 AXIOS INTERCEPTOR: The Silent Refresher
 axios.interceptors.response.use(
   (response) => response,
@@ -38,10 +43,6 @@ axios.interceptors.response.use(
 );
 
 export default function App() {
-  const API_URL =
-    import.meta.env.MODE === "production"
-      ? import.meta.env.VITE_API_URL
-      : "http://localhost:5000";
   // console.log("API URL:", API_URL); // Debugging line to confirm API URL
   const [token, setToken] = useState(
     localStorage.getItem("accessToken") || null,
@@ -140,7 +141,7 @@ export default function App() {
     });
 
     // 2. Feed it to the Toaster
-    toast
+    await toast
       .promise(uploadRequest, {
         loading: "Encrypting and analyzing statement...",
         success: (res) => {
@@ -157,6 +158,7 @@ export default function App() {
       })
       .finally(() => {
         setIsUploading(false); // Ensures the button re-enables whether success or fail
+        setFile(null); // Clear the file input after attempt
       });
   };
 
@@ -212,11 +214,36 @@ export default function App() {
     }
   };
 
-  if (!token) return <Auth onLoginSuccess={handleAuthSuccess} />;
+  const handleExportExcel = async () => {
+    const exportPromise = axios.get(`${API_URL}/api/generateExcel/`, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: "blob", // Critical: Tells Axios we are getting binary file data
+    });
+
+    toast.promise(exportPromise, {
+      loading: "Compiling Excel file...",
+      success: (response) => {
+        // Create an invisible link, click it to download, then destroy it
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "FinAI_Statement.xlsx");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return "Download complete!";
+      },
+      error: (err) => {
+        return "Failed to download Excel file.";
+      },
+    });
+  };
+
+  // if (!token) return <Auth onLoginSuccess={handleAuthSuccess} />;
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-8 font-sans selection:bg-cyan-500/30">
-      {/* 🎨 GLOBAL TOASTER ADDED HERE WITH CYBERPUNK STYLING */}
+    <>
+      {/* 1. TOASTER STAYS AT THE VERY TOP SO IT NEVER UNMOUNTS */}
       <Toaster
         position="top-center"
         toastOptions={{
@@ -226,83 +253,85 @@ export default function App() {
             border: "1px solid #334155",
           },
           success: {
-            iconTheme: {
-              primary: "#06b6d4",
-              secondary: "#fff",
-            },
+            iconTheme: { primary: "#06b6d4", secondary: "#fff" },
           },
           error: {
-            iconTheme: {
-              primary: "#f43f5e",
-              secondary: "#fff",
-            },
+            iconTheme: { primary: "#f43f5e", secondary: "#fff" },
           },
         }}
       />
 
-      <div className="max-w-[1400px] mx-auto flex flex-col gap-6">
-        {/* Glass Header */}
-        <header className="flex justify-between items-center bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl border border-white/10 shadow-2xl">
-          <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <span className="font-bold text-white text-xl tracking-tighter">
-                AI
-              </span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">
-                Fin AI
-              </h1>
-              <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest">
-                User: {user?.username || user?.email} // Status: Active
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="bg-slate-900 hover:bg-slate-950 text-slate-300 border border-slate-700 hover:border-rose-500/50 font-semibold px-5 py-2 rounded-xl transition-all duration-300 text-sm"
-          >
-            Disconnect
-          </button>
-        </header>
+      {/* 2. CONDITIONALLY RENDER AUTH OR DASHBOARD */}
+      {!token ? (
+        <Auth onLoginSuccess={handleAuthSuccess} />
+      ) : (
+        <div className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-8 font-sans selection:bg-cyan-500/30">
+          <div className="max-w-[1400px] mx-auto flex flex-col gap-6">
+            {/* Glass Header */}
+            <header className="flex justify-between items-center bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl border border-white/10 shadow-2xl">
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                  <span className="font-bold text-white text-xl tracking-tighter">
+                    AI
+                  </span>
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-white tracking-tight">
+                    Fin AI
+                  </h1>
+                  <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest">
+                    User: {user?.username || user?.email} // Status: Active
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="bg-slate-900 hover:bg-slate-950 text-slate-300 border border-slate-700 hover:border-rose-500/50 font-semibold px-5 py-2 rounded-xl transition-all duration-300 text-sm"
+              >
+                Disconnect
+              </button>
+            </header>
 
-        {/* Bento Grid Top Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 flex flex-col gap-6">
-            <UploadCard
-              file={file}
-              setFile={setFile}
-              uploadFile={uploadFile}
-              isUploading={isUploading}
-              insights={insights}
-            />
-          </div>
-          <div className="lg:col-span-2">
-            <ChatBox
-              messages={messages}
-              chatInput={chatInput}
-              setChatInput={setChatInput}
-              handleSendMessage={handleSendMessage}
-              isTyping={isTyping}
-              insights={insights}
-            />
+            {/* Bento Grid Top Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1 flex flex-col gap-6">
+                <UploadCard
+                  file={file}
+                  setFile={setFile}
+                  uploadFile={uploadFile}
+                  isUploading={isUploading}
+                  insights={insights}
+                  handleExportExcel={handleExportExcel}
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <ChatBox
+                  messages={messages}
+                  chatInput={chatInput}
+                  setChatInput={setChatInput}
+                  handleSendMessage={handleSendMessage}
+                  isTyping={isTyping}
+                  insights={insights}
+                />
+              </div>
+            </div>
+
+            {/* Bottom Row Analysis */}
+            {insights && (
+              <AnalysisDashboard
+                availableMonths={availableMonths}
+                selectedCurrent={selectedCurrent}
+                setSelectedCurrent={setSelectedCurrent}
+                selectedPrevious={selectedPrevious}
+                setSelectedPrevious={setSelectedPrevious}
+                isAnalyzing={isAnalyzing}
+                fetchAnalysis={fetchAnalysis}
+                deepAnalysis={deepAnalysis}
+              />
+            )}
           </div>
         </div>
-
-        {/* Bottom Row Analysis */}
-        {insights && (
-          <AnalysisDashboard
-            availableMonths={availableMonths}
-            selectedCurrent={selectedCurrent}
-            setSelectedCurrent={setSelectedCurrent}
-            selectedPrevious={selectedPrevious}
-            setSelectedPrevious={setSelectedPrevious}
-            isAnalyzing={isAnalyzing}
-            fetchAnalysis={fetchAnalysis}
-            deepAnalysis={deepAnalysis}
-          />
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 }

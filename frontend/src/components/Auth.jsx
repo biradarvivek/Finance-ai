@@ -29,7 +29,7 @@ export default function Auth({ onLoginSuccess }) {
     // 🚀 THE MAGIC: toast.promise handles the loading, success, and error UI automatically!
     const authPromise = axios.post(`${API_URL}${endpoint}`, payload);
 
-    toast.promise(authPromise, {
+    await toast.promise(authPromise, {
       loading: isLogin ? "Authenticating..." : "Initializing Protocol...",
       success: (res) => {
         // This runs if the API call is successful (Status 200)

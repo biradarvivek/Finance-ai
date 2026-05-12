@@ -8,6 +8,7 @@ const uploadRoutes = require("./routes/uploadRoutes");
 const analysisRoutes = require("./routes/analysisRoutes");
 const authRoutes = require("./routes/authRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const generateExcelRoute = require("./routes/generateExcelRoute");
 
 connectDB();
 
@@ -20,6 +21,7 @@ app.use("/api", uploadRoutes);
 app.use("/api/analysis", analysisRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/generateExcel", generateExcelRoute);
 
 app.get("/", (req, res) => {
   res.send("Hello from backend!");
